@@ -1,9 +1,14 @@
-"""Webhook and HTTP event delivery pipe."""
+"""Webhook and HTTP event delivery pipe.
+
+This module provides a generic webhook base class and specific implementations
+for popular services like Slack, Discord, Microsoft Teams, etc.
+"""
 
 import json
 import sys
 from typing import Any, Optional, Dict
 from io import BytesIO
+from abc import abstractmethod
 import logging
 
 import numpy.typing as npt
@@ -14,8 +19,10 @@ from proctap_pipes.base import BasePipe, AudioFormat
 logger = logging.getLogger(__name__)
 
 
-class WebhookPipe(BasePipe):
-    """Webhook delivery pipe for sending events and data to HTTP endpoints.
+class BaseWebhookPipe(BasePipe):
+    """Abstract base webhook delivery pipe.
+
+    Subclasses should implement format_payload() to create service-specific payloads.
 
     Can operate in two modes:
     1. Text mode: Send text data (e.g., transcriptions) as JSON payloads
@@ -29,7 +36,6 @@ class WebhookPipe(BasePipe):
         headers: Optional[Dict[str, str]] = None,
         text_mode: bool = True,
         audio_format: Optional[AudioFormat] = None,
-        payload_template: Optional[Dict[str, Any]] = None,
         auth_token: Optional[str] = None,
         timeout: float = 10.0,
         batch_size: int = 1,
@@ -42,7 +48,6 @@ class WebhookPipe(BasePipe):
             headers: Additional HTTP headers
             text_mode: If True, send text; if False, send audio
             audio_format: Audio format configuration
-            payload_template: JSON template for text payloads
             auth_token: Bearer token for authentication
             timeout: Request timeout in seconds
             batch_size: Number of items to batch before sending
@@ -52,7 +57,6 @@ class WebhookPipe(BasePipe):
         self.method = method.upper()
         self.headers = headers or {}
         self.text_mode = text_mode
-        self.payload_template = payload_template or {}
         self.auth_token = auth_token
         self.timeout = timeout
         self.batch_size = batch_size
@@ -67,6 +71,19 @@ class WebhookPipe(BasePipe):
         # Set default content type for text mode
         if self.text_mode and "Content-Type" not in self.headers:
             self.headers["Content-Type"] = "application/json"
+
+    @abstractmethod
+    def format_payload(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Format text into service-specific payload.
+
+        Args:
+            text: Text content to send
+            metadata: Additional metadata
+
+        Returns:
+            Formatted payload dict
+        """
+        pass
 
     def _send_request(self, payload: Any, is_audio: bool = False) -> bool:
         """Send HTTP request to webhook.
@@ -107,26 +124,6 @@ class WebhookPipe(BasePipe):
             self.logger.error(f"Webhook request failed: {e}")
             return False
 
-    def _build_payload(self, data: Any) -> Dict[str, Any]:
-        """Build JSON payload from data and template.
-
-        Args:
-            data: Input data (text or structured data)
-
-        Returns:
-            JSON payload dict
-        """
-        payload = self.payload_template.copy()
-
-        # If data is already a dict, merge it
-        if isinstance(data, dict):
-            payload.update(data)
-        else:
-            # Otherwise, set it as "data" field
-            payload["data"] = data
-
-        return payload
-
     def send_text(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Send text data to webhook.
 
@@ -137,11 +134,7 @@ class WebhookPipe(BasePipe):
         Returns:
             True if request succeeded, False otherwise
         """
-        payload = self._build_payload({"text": text})
-
-        if metadata:
-            payload.update(metadata)
-
+        payload = self.format_payload(text, metadata)
         return self._send_request(payload, is_audio=False)
 
     def send_audio(self, audio_data: npt.NDArray[Any]) -> bool:
@@ -216,13 +209,13 @@ class WebhookPipe(BasePipe):
         if len(self.batch) >= self.batch_size:
             # Send batch
             if self.batch_size == 1:
-                payload = self._build_payload({"text": self.batch[0]})
+                success = self.send_text(self.batch[0])
             else:
-                payload = self._build_payload({"texts": self.batch})
+                # For batch, send as list - subclasses should handle this
+                payload = self.format_payload("\n".join(self.batch), {"batch": True, "count": len(self.batch)})
+                success = self._send_request(payload, is_audio=False)
 
-            success = self._send_request(payload, is_audio=False)
             self.batch = []
-
             return "sent" if success else "failed"
 
         return None
@@ -237,28 +230,244 @@ class WebhookPipe(BasePipe):
             return None
 
         if self.batch_size == 1:
-            payload = self._build_payload({"text": self.batch[0]})
+            success = self.send_text(self.batch[0])
         else:
-            payload = self._build_payload({"texts": self.batch})
+            payload = self.format_payload("\n".join(self.batch), {"batch": True, "count": len(self.batch)})
+            success = self._send_request(payload, is_audio=False)
 
-        success = self._send_request(payload, is_audio=False)
         self.batch = []
-
         return "sent" if success else "failed"
 
 
-class WebhookPipeText(WebhookPipe):
-    """Convenience class for text-only webhook pipe."""
+# Concrete implementations for specific services
+
+
+class WebhookPipe(BaseWebhookPipe):
+    """Generic webhook pipe with customizable payload template.
+
+    Use this for custom webhooks or when you need full control over the payload format.
+    """
+
+    def __init__(self, payload_template: Optional[Dict[str, Any]] = None, **kwargs: Any):
+        """Initialize generic webhook pipe.
+
+        Args:
+            payload_template: Template for JSON payloads
+            **kwargs: Additional arguments for BaseWebhookPipe
+        """
+        super().__init__(**kwargs)
+        self.payload_template = payload_template or {}
+
+    def format_payload(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Format text into generic payload.
+
+        Args:
+            text: Text content
+            metadata: Additional metadata
+
+        Returns:
+            Formatted payload
+        """
+        payload = self.payload_template.copy()
+        payload["text"] = text
+
+        if metadata:
+            payload.update(metadata)
+
+        return payload
+
+
+class SlackWebhookPipe(BaseWebhookPipe):
+    """Slack webhook pipe using Incoming Webhooks format.
+
+    Example:
+        pipe = SlackWebhookPipe(
+            webhook_url="https://hooks.slack.com/services/...",
+            channel="#transcriptions",
+            username="ProcTap Bot"
+        )
+        pipe.send_text("Meeting transcription: ...")
+    """
+
+    def __init__(
+        self,
+        webhook_url: str,
+        channel: Optional[str] = None,
+        username: str = "ProcTap Bot",
+        icon_emoji: Optional[str] = ":microphone:",
+        **kwargs: Any,
+    ):
+        """Initialize Slack webhook pipe.
+
+        Args:
+            webhook_url: Slack incoming webhook URL
+            channel: Target channel (e.g., #general)
+            username: Bot username
+            icon_emoji: Bot icon emoji
+            **kwargs: Additional arguments for BaseWebhookPipe
+        """
+        super().__init__(webhook_url, **kwargs)
+        self.channel = channel
+        self.username = username
+        self.icon_emoji = icon_emoji
+
+    def format_payload(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Format text into Slack message payload.
+
+        Args:
+            text: Message text
+            metadata: Additional metadata (can include attachments, blocks, etc.)
+
+        Returns:
+            Slack-formatted payload
+        """
+        payload: Dict[str, Any] = {
+            "text": text,
+            "username": self.username,
+        }
+
+        if self.channel:
+            payload["channel"] = self.channel
+
+        if self.icon_emoji:
+            payload["icon_emoji"] = self.icon_emoji
+
+        if metadata:
+            # Allow metadata to override or add fields
+            payload.update(metadata)
+
+        return payload
+
+
+class DiscordWebhookPipe(BaseWebhookPipe):
+    """Discord webhook pipe.
+
+    Example:
+        pipe = DiscordWebhookPipe(
+            webhook_url="https://discord.com/api/webhooks/...",
+            username="ProcTap Bot"
+        )
+        pipe.send_text("Transcription: ...")
+    """
+
+    def __init__(
+        self,
+        webhook_url: str,
+        username: str = "ProcTap Bot",
+        avatar_url: Optional[str] = None,
+        **kwargs: Any,
+    ):
+        """Initialize Discord webhook pipe.
+
+        Args:
+            webhook_url: Discord webhook URL
+            username: Bot username
+            avatar_url: Bot avatar URL
+            **kwargs: Additional arguments for BaseWebhookPipe
+        """
+        super().__init__(webhook_url, **kwargs)
+        self.username = username
+        self.avatar_url = avatar_url
+
+    def format_payload(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Format text into Discord message payload.
+
+        Args:
+            text: Message content
+            metadata: Additional metadata (can include embeds, etc.)
+
+        Returns:
+            Discord-formatted payload
+        """
+        payload: Dict[str, Any] = {
+            "content": text,
+            "username": self.username,
+        }
+
+        if self.avatar_url:
+            payload["avatar_url"] = self.avatar_url
+
+        if metadata:
+            payload.update(metadata)
+
+        return payload
+
+
+class TeamsWebhookPipe(BaseWebhookPipe):
+    """Microsoft Teams webhook pipe using Incoming Webhook connector.
+
+    Example:
+        pipe = TeamsWebhookPipe(
+            webhook_url="https://outlook.office.com/webhook/...",
+            title="Meeting Transcription"
+        )
+        pipe.send_text("Transcription content...")
+    """
+
+    def __init__(
+        self,
+        webhook_url: str,
+        title: str = "ProcTap Notification",
+        theme_color: str = "0078D4",
+        **kwargs: Any,
+    ):
+        """Initialize Teams webhook pipe.
+
+        Args:
+            webhook_url: Teams incoming webhook URL
+            title: Message card title
+            theme_color: Hex color for the card accent (without #)
+            **kwargs: Additional arguments for BaseWebhookPipe
+        """
+        super().__init__(webhook_url, **kwargs)
+        self.title = title
+        self.theme_color = theme_color
+
+    def format_payload(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Format text into Teams message card payload.
+
+        Args:
+            text: Message text
+            metadata: Additional metadata
+
+        Returns:
+            Teams MessageCard-formatted payload
+        """
+        payload: Dict[str, Any] = {
+            "@type": "MessageCard",
+            "@context": "https://schema.org/extensions",
+            "summary": self.title,
+            "themeColor": self.theme_color,
+            "title": self.title,
+            "text": text,
+        }
+
+        if metadata:
+            # Metadata can add sections, facts, potentialAction, etc.
+            payload.update(metadata)
+
+        return payload
+
+
+class WebhookPipeText(BaseWebhookPipe):
+    """Convenience class for generic text-only webhook pipe."""
 
     def __init__(self, webhook_url: str, **kwargs: Any):
         """Initialize text webhook pipe.
 
         Args:
             webhook_url: Target webhook URL
-            **kwargs: Additional arguments for WebhookPipe
+            **kwargs: Additional arguments for BaseWebhookPipe
         """
         kwargs["text_mode"] = True
         super().__init__(webhook_url, **kwargs)
+
+    def format_payload(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Format as simple text payload."""
+        payload = {"text": text}
+        if metadata:
+            payload.update(metadata)
+        return payload
 
     def send(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Send text to webhook.
@@ -273,7 +482,7 @@ class WebhookPipeText(WebhookPipe):
         return self.send_text(text, metadata)
 
 
-class WebhookPipeAudio(WebhookPipe):
+class WebhookPipeAudio(BaseWebhookPipe):
     """Convenience class for audio-only webhook pipe."""
 
     def __init__(
@@ -287,10 +496,14 @@ class WebhookPipeAudio(WebhookPipe):
         Args:
             webhook_url: Target webhook URL
             audio_format: Audio format configuration
-            **kwargs: Additional arguments for WebhookPipe
+            **kwargs: Additional arguments for BaseWebhookPipe
         """
         kwargs["text_mode"] = False
         super().__init__(webhook_url, audio_format=audio_format, **kwargs)
+
+    def format_payload(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Not used for audio mode."""
+        return {}
 
     def send(self, audio_data: npt.NDArray[Any]) -> bool:
         """Send audio to webhook.

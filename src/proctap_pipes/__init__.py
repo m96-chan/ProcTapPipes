@@ -6,8 +6,29 @@ pipeline tools and importable Python modules.
 
 from proctap_pipes.base import BasePipe
 from proctap_pipes.whisper_pipe import WhisperPipe
-from proctap_pipes.llm_pipe import LLMPipe
-from proctap_pipes.webhook_pipe import WebhookPipe
+from proctap_pipes.llm_pipe import LLMPipe, LLMPipeWithContext, LLMIntent
+from proctap_pipes.webhook_pipe import (
+    BaseWebhookPipe,
+    WebhookPipe,
+    SlackWebhookPipe,
+    DiscordWebhookPipe,
+    TeamsWebhookPipe,
+    WebhookPipeText,
+    WebhookPipeAudio,
+)
 
 __version__ = "0.1.0"
-__all__ = ["BasePipe", "WhisperPipe", "LLMPipe", "WebhookPipe"]
+__all__ = [
+    "BasePipe",
+    "WhisperPipe",
+    "LLMPipe",
+    "LLMPipeWithContext",
+    "LLMIntent",
+    "BaseWebhookPipe",
+    "WebhookPipe",
+    "SlackWebhookPipe",
+    "DiscordWebhookPipe",
+    "TeamsWebhookPipe",
+    "WebhookPipeText",
+    "WebhookPipeAudio",
+]
