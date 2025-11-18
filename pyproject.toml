@@ -42,11 +42,15 @@ dev = [
 ]
 
 whisper = [
-    "openai-whisper>=20230918",
+    "faster-whisper>=1.0.0",
+]
+
+whisper-openai = [
+    "openai>=1.0.0",
 ]
 
 all = [
-    "proctap-pipes[whisper]",
+    "proctap-pipes[whisper,whisper-openai]",
 ]
 
 [project.scripts]
