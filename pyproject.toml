@@ -57,6 +57,7 @@ all = [
 proctap-whisper = "proctap_pipes.cli.whisper_cli:main"
 proctap-llm = "proctap_pipes.cli.llm_cli:main"
 proctap-webhook = "proctap_pipes.cli.webhook_cli:main"
+proctap-volume-meter = "proctap_pipes.cli.volume_meter_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/proctap/proctap-pipes"

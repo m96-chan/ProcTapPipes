@@ -210,6 +210,12 @@ class BasePipe(ABC):
                         output_stream.buffer.write(result)
                     else:
                         output_stream.write(result)
+                elif isinstance(result, np.ndarray):
+                    # For audio passthrough, write raw PCM bytes
+                    if hasattr(output_stream, "buffer"):
+                        output_stream.buffer.write(result.tobytes())
+                    else:
+                        output_stream.write(result.tobytes())
                 else:
                     # Convert to string representation
                     output_stream.write(str(result))

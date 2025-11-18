@@ -35,6 +35,12 @@ Send events and data to HTTP endpoints (webhooks, APIs).
 **CLI**: `proctap-webhook`
 **Module**: `proctap_pipes.WebhookPipe`
 
+### 4. VolumeMeterPipe
+Real-time volume meter with audio passthrough for pipeline monitoring.
+
+**CLI**: `proctap-volume-meter`
+**Module**: `proctap_pipes.VolumeMeterPipe`
+
 ## Installation
 
 ```bash
@@ -59,11 +65,14 @@ pip install proctap-pipes[all]
 # Transcribe audio from a process
 proctap -pid 1234 --stdout | proctap-whisper
 
+# Monitor volume levels while transcribing
+proctap -pid 1234 --stdout | proctap-volume-meter | proctap-whisper
+
 # Transcribe and process with LLM
 proctap -pid 1234 --stdout | proctap-whisper | proctap-llm
 
-# Transcribe and send to webhook
-proctap -pid 1234 --stdout | proctap-whisper | proctap-webhook https://example.com/hook
+# Full pipeline: monitor volume, transcribe, and send to webhook
+proctap -pid 1234 --stdout | proctap-volume-meter | proctap-whisper | proctap-webhook https://example.com/hook
 
 # Use OpenAI API for Whisper
 export OPENAI_API_KEY="sk-..."
@@ -112,6 +121,23 @@ webhook = WebhookPipe(
 
 # Send text data
 webhook.send_text("Hello from ProcTapPipes!")
+```
+
+```python
+from proctap_pipes import VolumeMeterPipe
+import sys
+
+# Create a volume meter pipe with passthrough
+meter = VolumeMeterPipe(
+    bar_width=50,
+    update_interval=0.05,
+    show_db=True
+)
+
+# Monitor volume while passing audio through
+for audio_chunk in meter.run_stream(sys.stdin.buffer):
+    # Audio chunk is unchanged and can be piped to other tools
+    sys.stdout.buffer.write(audio_chunk.tobytes())
 ```
 
 ## CLI Tools Reference
@@ -213,6 +239,45 @@ echo "test" | proctap-webhook https://example.com/hook -H "X-Custom: value"
 
 # Batch multiple items
 cat texts.txt | proctap-webhook https://example.com/hook --batch 5
+```
+
+### proctap-volume-meter
+
+Display real-time volume levels with audio passthrough.
+
+```bash
+proctap-volume-meter [OPTIONS]
+
+Options:
+  -r, --sample-rate INTEGER   Sample rate in Hz [default: 48000]
+  -c, --channels INTEGER      Number of channels [default: 2]
+  -w, --sample-width INTEGER  Sample width in bytes [default: 2]
+  -b, --bar-width INTEGER     Width of volume bar [default: 50]
+  -u, --update-interval FLOAT Display update interval [default: 0.05]
+  -p, --peak-hold FLOAT       Peak hold time in seconds [default: 1.0]
+  --no-db                     Hide dB values
+  --no-rms                    Hide RMS meter
+  --no-peak                   Hide peak meter
+  --db-min FLOAT              Minimum dB for display [default: -60.0]
+  --db-max FLOAT              Maximum dB for display [default: 0.0]
+  --chunk-size INTEGER        Audio chunk size [default: 4096]
+  -v, --verbose               Enable verbose logging
+```
+
+**Examples:**
+
+```bash
+# Monitor volume while transcribing
+proctap -pid 1234 --stdout | proctap-volume-meter | proctap-whisper
+
+# Just monitor volume (no further processing)
+proctap -pid 1234 --stdout | proctap-volume-meter > /dev/null
+
+# Custom bar width and update rate
+proctap -pid 1234 --stdout | proctap-volume-meter -b 80 -u 0.1
+
+# Show only RMS, hide peak
+proctap -pid 1234 --stdout | proctap-volume-meter --no-peak
 ```
 
 ## Python API Reference
