@@ -1,0 +1,87 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "proctap-pipes"
+version = "0.1.0"
+description = "Official companion toolkit for ProcTap - modular audio-processing utilities for real-time workflows"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "ProcTap Contributors"}
+]
+keywords = ["audio", "processing", "proctap", "whisper", "transcription", "streaming"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Capture/Recording",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "numpy>=1.24.0",
+    "click>=8.1.0",
+    "requests>=2.31.0",
+    "openai>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+]
+
+whisper = [
+    "openai-whisper>=20230918",
+]
+
+all = [
+    "proctap-pipes[whisper]",
+]
+
+[project.scripts]
+proctap-whisper = "proctap_pipes.cli.whisper_cli:main"
+proctap-llm = "proctap_pipes.cli.llm_cli:main"
+proctap-webhook = "proctap_pipes.cli.webhook_cli:main"
+
+[project.urls]
+Homepage = "https://github.com/proctap/proctap-pipes"
+Documentation = "https://github.com/proctap/proctap-pipes#readme"
+Repository = "https://github.com/proctap/proctap-pipes"
+Issues = "https://github.com/proctap/proctap-pipes/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+strict_optional = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=proctap_pipes --cov-report=term-missing"
