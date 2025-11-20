@@ -49,32 +49,34 @@ jobs:
   publish-to-testpypi:
     name: Publish to TestPyPI
     if: |
-      (github.event_name == 'workflow_dispatch' && 
+      (github.event_name == 'workflow_dispatch' &&
        (github.event.inputs.target == 'testpypi' || github.event.inputs.target == 'both')) ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     needs:
     - build
     runs-on: ubuntu-latest
-    
+    continue-on-error: true  # Don't fail the whole workflow if TestPyPI fails
+
     environment:
       name: testpypi
       url: https://test.pypi.org/p/proctap-pipes
-    
+
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
-    
+
     steps:
     - name: Download all the dists
       uses: actions/download-artifact@v4
       with:
         name: python-package-distributions
         path: dist/
-    
+
     - name: Publish to TestPyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         repository-url: https://test.pypi.org/legacy/
         skip-existing: true
+        verbose: true  # Enable verbose output for debugging
 
   publish-to-pypi:
     name: Publish to PyPI
