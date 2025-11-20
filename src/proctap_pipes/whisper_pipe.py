@@ -30,6 +30,25 @@ class WhisperPipe(BasePipe):
             print(transcription)
     """
 
+    # Common Whisper hallucination patterns to filter out
+    HALLUCINATION_PATTERNS = [
+        "ご視聴ありがとうございました",
+        "ご視聴ありがとうございます",
+        "Thank you for watching",
+        "Thanks for watching",
+        "ご清聴ありがとうございました",
+        "字幕作成",
+        "Amara.org",
+        "字幕",
+        "subtitles",
+        ".",
+        "..",
+        "...",
+        "thank you",
+        "ありがとうございました",
+        "ありがとうございます",
+    ]
+
     def __init__(
         self,
         model: str = "base",
@@ -40,6 +59,10 @@ class WhisperPipe(BasePipe):
         buffer_duration: float = 5.0,
         vad_filter: bool = True,
         beam_size: int = 5,
+        initial_prompt: Optional[str] = None,
+        silence_threshold: float = 0.01,
+        skip_repetitions: bool = True,
+        skip_hallucinations: bool = True,
     ):
         """Initialize Faster-Whisper transcription pipe.
 
@@ -52,6 +75,10 @@ class WhisperPipe(BasePipe):
             buffer_duration: Duration in seconds to buffer before transcribing
             vad_filter: Enable voice activity detection filter
             beam_size: Beam size for beam search decoding
+            initial_prompt: Optional text to guide the model's style and vocabulary (e.g., proper nouns)
+            silence_threshold: RMS threshold below which audio is considered silence (0.0-1.0)
+            skip_repetitions: Skip repeated transcriptions to avoid hallucination loops
+            skip_hallucinations: Skip common hallucination phrases
         """
         super().__init__(audio_format)
         self.model_name = model
@@ -61,11 +88,19 @@ class WhisperPipe(BasePipe):
         self.buffer_duration = buffer_duration
         self.vad_filter = vad_filter
         self.beam_size = beam_size
+        self.initial_prompt = initial_prompt
+        self.silence_threshold = silence_threshold
+        self.skip_repetitions = skip_repetitions
+        self.skip_hallucinations = skip_hallucinations
 
         # Calculate buffer size in samples
         self.buffer_size = int(self.audio_format.sample_rate * buffer_duration)
         self.buffer: list[npt.NDArray[Any]] = []
         self.buffer_samples = 0
+
+        # Track recent transcriptions for repetition detection
+        self.recent_transcriptions: list[str] = []
+        self.max_recent = 3  # Keep last 3 transcriptions
 
         # Initialize model
         self._init_model()
@@ -90,6 +125,120 @@ class WhisperPipe(BasePipe):
                 "Install with: pip install faster-whisper"
             )
 
+    def _resample(self, audio: npt.NDArray[np.float32], orig_sr: int, target_sr: int) -> npt.NDArray[np.float32]:
+        """Resample audio to target sample rate using linear interpolation.
+
+        Args:
+            audio: Audio samples (mono, normalized float32)
+            orig_sr: Original sample rate
+            target_sr: Target sample rate
+
+        Returns:
+            Resampled audio
+        """
+        if orig_sr == target_sr:
+            return audio
+
+        # Calculate the ratio and new length
+        ratio = target_sr / orig_sr
+        new_length = int(len(audio) * ratio)
+
+        # Use linear interpolation for resampling
+        old_indices = np.arange(len(audio))
+        new_indices = np.linspace(0, len(audio) - 1, new_length)
+        resampled = np.interp(new_indices, old_indices, audio).astype(np.float32)
+
+        self.logger.debug(f"Resampled from {orig_sr}Hz to {target_sr}Hz: {len(audio)} -> {len(resampled)} samples")
+
+        return resampled
+
+    def _is_silence(self, audio_data: npt.NDArray[Any]) -> bool:
+        """Check if audio data is silence or near-silence.
+
+        Args:
+            audio_data: NumPy array of audio samples
+
+        Returns:
+            True if audio is below silence threshold
+        """
+        # Convert to float if needed
+        if audio_data.dtype == np.int16:
+            audio_float = audio_data.astype(np.float32) / 32768.0
+        else:
+            audio_float = audio_data.astype(np.float32)
+
+        # Calculate RMS
+        rms = np.sqrt(np.mean(audio_float**2))
+
+        is_silent = rms < self.silence_threshold
+
+        if is_silent:
+            self.logger.debug(f"Audio is silent (RMS: {rms:.4f} < threshold: {self.silence_threshold})")
+
+        return is_silent
+
+    def _is_hallucination(self, text: str) -> bool:
+        """Check if text matches known hallucination patterns.
+
+        Args:
+            text: Transcribed text
+
+        Returns:
+            True if text is likely a hallucination
+        """
+        if not self.skip_hallucinations:
+            return False
+
+        text_lower = text.lower().strip()
+
+        # Check exact matches (case insensitive)
+        for pattern in self.HALLUCINATION_PATTERNS:
+            if text_lower == pattern.lower():
+                self.logger.debug(f"Filtered hallucination (exact match): '{text}'")
+                return True
+
+        # Check if entire text is just the pattern repeated
+        for pattern in self.HALLUCINATION_PATTERNS:
+            if pattern.lower() in text_lower:
+                # Count occurrences
+                count = text_lower.count(pattern.lower())
+                # If pattern appears multiple times and makes up most of the text
+                if count > 1 and len(pattern) * count > len(text) * 0.7:
+                    self.logger.debug(f"Filtered hallucination (repetition): '{text}'")
+                    return True
+
+        return False
+
+    def _is_repetition(self, text: str) -> bool:
+        """Check if text is a repetition of recent transcriptions.
+
+        Args:
+            text: Transcribed text
+
+        Returns:
+            True if text is a repetition
+        """
+        if not self.skip_repetitions:
+            return False
+
+        # Check if this exact text appeared in recent transcriptions
+        if text in self.recent_transcriptions:
+            self.logger.debug(f"Filtered repetition: '{text}'")
+            return True
+
+        return False
+
+    def _update_recent_transcriptions(self, text: str) -> None:
+        """Update the list of recent transcriptions.
+
+        Args:
+            text: New transcribed text
+        """
+        self.recent_transcriptions.append(text)
+        # Keep only the most recent transcriptions
+        if len(self.recent_transcriptions) > self.max_recent:
+            self.recent_transcriptions.pop(0)
+
     def _prepare_audio(self, audio_data: npt.NDArray[Any]) -> npt.NDArray[np.float32]:
         """Prepare audio data for transcription.
 
@@ -97,8 +246,12 @@ class WhisperPipe(BasePipe):
             audio_data: NumPy array of audio samples
 
         Returns:
-            Mono float32 audio normalized to [-1, 1]
+            Mono float32 audio normalized to [-1, 1], resampled to 16kHz
         """
+        # Debug: Log incoming audio format
+        self.logger.debug(f"Input audio dtype: {audio_data.dtype}, shape: {audio_data.shape}")
+        self.logger.debug(f"Input audio min: {audio_data.min()}, max: {audio_data.max()}")
+
         # Convert to mono if stereo
         if audio_data.ndim > 1 and audio_data.shape[1] > 1:
             audio_data = audio_data.mean(axis=1)
@@ -106,7 +259,32 @@ class WhisperPipe(BasePipe):
             audio_data = audio_data.flatten()
 
         # Convert to float32 and normalize to [-1, 1]
-        audio_float = audio_data.astype(np.float32) / 32768.0
+        if audio_data.dtype == np.int16:
+            # int16: divide by 32768.0
+            audio_float = audio_data.astype(np.float32) / 32768.0
+        elif audio_data.dtype in (np.float32, np.float64):
+            # Float types: check if already normalized
+            max_val = np.abs(audio_data).max()
+            if max_val > 1.0:
+                # Unnormalized float, normalize it
+                self.logger.debug(f"Float audio appears unnormalized (max: {max_val}), normalizing...")
+                audio_float = (audio_data / max_val).astype(np.float32)
+            else:
+                # Already normalized
+                audio_float = audio_data.astype(np.float32)
+        else:
+            # Unknown dtype, try to convert
+            self.logger.warning(f"Unexpected audio dtype: {audio_data.dtype}, attempting conversion...")
+            audio_float = audio_data.astype(np.float32)
+            max_val = np.abs(audio_float).max()
+            if max_val > 1.0:
+                audio_float = audio_float / max_val
+
+        # Resample to 16kHz (Whisper's native sample rate)
+        if self.audio_format.sample_rate != 16000:
+            audio_float = self._resample(audio_float, self.audio_format.sample_rate, 16000)
+
+        self.logger.debug(f"Output audio min: {audio_float.min():.4f}, max: {audio_float.max():.4f}")
 
         return audio_float
 
@@ -127,6 +305,7 @@ class WhisperPipe(BasePipe):
             language=self.language,
             beam_size=self.beam_size,
             vad_filter=self.vad_filter,
+            initial_prompt=self.initial_prompt,
         )
 
         # Combine all segments
@@ -162,6 +341,14 @@ class WhisperPipe(BasePipe):
             # Concatenate buffer
             full_buffer = np.vstack(self.buffer)
 
+            # Check if buffer is mostly silence
+            if self._is_silence(full_buffer):
+                self.logger.debug("Skipping transcription: audio is silence")
+                # Reset buffer
+                self.buffer = []
+                self.buffer_samples = 0
+                return None
+
             # Transcribe
             try:
                 text = self._transcribe(full_buffer)
@@ -171,6 +358,19 @@ class WhisperPipe(BasePipe):
                 self.buffer_samples = 0
 
                 if text:
+                    # Check for hallucinations
+                    if self._is_hallucination(text):
+                        self.logger.info(f"Skipped hallucination: '{text}'")
+                        return None
+
+                    # Check for repetitions
+                    if self._is_repetition(text):
+                        self.logger.info(f"Skipped repetition: '{text}'")
+                        return None
+
+                    # Update recent transcriptions
+                    self._update_recent_transcriptions(text)
+
                     return text
             except Exception as e:
                 self.logger.error(f"Transcription failed: {e}", exc_info=True)
@@ -191,6 +391,13 @@ class WhisperPipe(BasePipe):
 
         full_buffer = np.vstack(self.buffer)
 
+        # Check if buffer is mostly silence
+        if self._is_silence(full_buffer):
+            self.logger.debug("Skipping flush transcription: audio is silence")
+            self.buffer = []
+            self.buffer_samples = 0
+            return None
+
         try:
             text = self._transcribe(full_buffer)
 
@@ -199,6 +406,19 @@ class WhisperPipe(BasePipe):
             self.buffer_samples = 0
 
             if text:
+                # Check for hallucinations
+                if self._is_hallucination(text):
+                    self.logger.info(f"Skipped hallucination during flush: '{text}'")
+                    return None
+
+                # Check for repetitions
+                if self._is_repetition(text):
+                    self.logger.info(f"Skipped repetition during flush: '{text}'")
+                    return None
+
+                # Update recent transcriptions
+                self._update_recent_transcriptions(text)
+
                 return text
         except Exception as e:
             self.logger.error(f"Transcription failed during flush: {e}", exc_info=True)
@@ -219,6 +439,9 @@ class OpenAIWhisperPipe(BasePipe):
             print(transcription)
     """
 
+    # Use same hallucination patterns as WhisperPipe
+    HALLUCINATION_PATTERNS = WhisperPipe.HALLUCINATION_PATTERNS
+
     def __init__(
         self,
         api_key: str,
@@ -228,6 +451,9 @@ class OpenAIWhisperPipe(BasePipe):
         buffer_duration: float = 5.0,
         prompt: Optional[str] = None,
         temperature: float = 0.0,
+        silence_threshold: float = 0.01,
+        skip_repetitions: bool = True,
+        skip_hallucinations: bool = True,
     ):
         """Initialize OpenAI Whisper API pipe.
 
@@ -239,6 +465,9 @@ class OpenAIWhisperPipe(BasePipe):
             buffer_duration: Duration in seconds to buffer before transcribing
             prompt: Optional text to guide the model's style
             temperature: Sampling temperature (0 to 1)
+            silence_threshold: RMS threshold below which audio is considered silence (0.0-1.0)
+            skip_repetitions: Skip repeated transcriptions to avoid hallucination loops
+            skip_hallucinations: Skip common hallucination phrases
         """
         super().__init__(audio_format)
         self.api_key = api_key
@@ -247,11 +476,18 @@ class OpenAIWhisperPipe(BasePipe):
         self.buffer_duration = buffer_duration
         self.prompt = prompt
         self.temperature = temperature
+        self.silence_threshold = silence_threshold
+        self.skip_repetitions = skip_repetitions
+        self.skip_hallucinations = skip_hallucinations
 
         # Calculate buffer size in samples
         self.buffer_size = int(self.audio_format.sample_rate * buffer_duration)
         self.buffer: list[npt.NDArray[Any]] = []
         self.buffer_samples = 0
+
+        # Track recent transcriptions for repetition detection
+        self.recent_transcriptions: list[str] = []
+        self.max_recent = 3  # Keep last 3 transcriptions
 
         # Initialize API client
         self._init_client()
@@ -269,28 +505,164 @@ class OpenAIWhisperPipe(BasePipe):
                 "Install with: pip install openai"
             )
 
-    def _buffer_to_wav(self, audio_data: npt.NDArray[Any]) -> bytes:
-        """Convert audio buffer to WAV bytes.
+    def _is_silence(self, audio_data: npt.NDArray[Any]) -> bool:
+        """Check if audio data is silence or near-silence.
 
         Args:
             audio_data: NumPy array of audio samples
 
         Returns:
-            WAV file as bytes
+            True if audio is below silence threshold
         """
-        buffer = io.BytesIO()
+        # Convert to float if needed
+        if audio_data.dtype == np.int16:
+            audio_float = audio_data.astype(np.float32) / 32768.0
+        else:
+            audio_float = audio_data.astype(np.float32)
+
+        # Calculate RMS
+        rms = np.sqrt(np.mean(audio_float**2))
+
+        is_silent = rms < self.silence_threshold
+
+        if is_silent:
+            self.logger.debug(f"Audio is silent (RMS: {rms:.4f} < threshold: {self.silence_threshold})")
+
+        return is_silent
+
+    def _is_hallucination(self, text: str) -> bool:
+        """Check if text matches known hallucination patterns.
+
+        Args:
+            text: Transcribed text
+
+        Returns:
+            True if text is likely a hallucination
+        """
+        if not self.skip_hallucinations:
+            return False
+
+        text_lower = text.lower().strip()
+
+        # Check exact matches (case insensitive)
+        for pattern in self.HALLUCINATION_PATTERNS:
+            if text_lower == pattern.lower():
+                self.logger.debug(f"Filtered hallucination (exact match): '{text}'")
+                return True
+
+        # Check if entire text is just the pattern repeated
+        for pattern in self.HALLUCINATION_PATTERNS:
+            if pattern.lower() in text_lower:
+                # Count occurrences
+                count = text_lower.count(pattern.lower())
+                # If pattern appears multiple times and makes up most of the text
+                if count > 1 and len(pattern) * count > len(text) * 0.7:
+                    self.logger.debug(f"Filtered hallucination (repetition): '{text}'")
+                    return True
+
+        return False
+
+    def _is_repetition(self, text: str) -> bool:
+        """Check if text is a repetition of recent transcriptions.
+
+        Args:
+            text: Transcribed text
+
+        Returns:
+            True if text is a repetition
+        """
+        if not self.skip_repetitions:
+            return False
+
+        # Check if this exact text appeared in recent transcriptions
+        if text in self.recent_transcriptions:
+            self.logger.debug(f"Filtered repetition: '{text}'")
+            return True
+
+        return False
+
+    def _update_recent_transcriptions(self, text: str) -> None:
+        """Update the list of recent transcriptions.
+
+        Args:
+            text: New transcribed text
+        """
+        self.recent_transcriptions.append(text)
+        # Keep only the most recent transcriptions
+        if len(self.recent_transcriptions) > self.max_recent:
+            self.recent_transcriptions.pop(0)
+
+    def _resample(self, audio: npt.NDArray[np.float32], orig_sr: int, target_sr: int) -> npt.NDArray[np.float32]:
+        """Resample audio to target sample rate using linear interpolation.
+
+        Args:
+            audio: Audio samples (mono, normalized float32)
+            orig_sr: Original sample rate
+            target_sr: Target sample rate
+
+        Returns:
+            Resampled audio
+        """
+        if orig_sr == target_sr:
+            return audio
+
+        # Calculate the ratio and new length
+        ratio = target_sr / orig_sr
+        new_length = int(len(audio) * ratio)
+
+        # Use linear interpolation for resampling
+        old_indices = np.arange(len(audio))
+        new_indices = np.linspace(0, len(audio) - 1, new_length)
+        resampled = np.interp(new_indices, old_indices, audio).astype(np.float32)
+
+        self.logger.debug(f"Resampled from {orig_sr}Hz to {target_sr}Hz: {len(audio)} -> {len(resampled)} samples")
+
+        return resampled
+
+    def _buffer_to_wav(self, audio_data: npt.NDArray[Any]) -> bytes:
+        """Convert audio buffer to WAV bytes (16kHz mono int16).
+
+        Args:
+            audio_data: NumPy array of audio samples
+
+        Returns:
+            WAV file as bytes (16kHz, mono, int16)
+        """
+        # Debug: Log incoming audio format
+        self.logger.debug(f"Input audio dtype: {audio_data.dtype}, shape: {audio_data.shape}")
+        self.logger.debug(f"Input audio min: {audio_data.min()}, max: {audio_data.max()}")
 
         # Convert to mono if stereo
         if audio_data.ndim > 1 and audio_data.shape[1] > 1:
-            audio_data = audio_data.mean(axis=1).astype(self.audio_format.dtype)
+            audio_mono = audio_data.mean(axis=1)
         else:
-            audio_data = audio_data.flatten()
+            audio_mono = audio_data.flatten()
 
+        # Convert to float32 and normalize
+        if audio_mono.dtype == np.int16:
+            audio_float = audio_mono.astype(np.float32) / 32768.0
+        elif audio_mono.dtype in (np.float32, np.float64):
+            max_val = np.abs(audio_mono).max()
+            if max_val > 1.0:
+                audio_float = (audio_mono / max_val).astype(np.float32)
+            else:
+                audio_float = audio_mono.astype(np.float32)
+        else:
+            audio_float = audio_mono.astype(np.float32)
+
+        # Resample to 16kHz
+        if self.audio_format.sample_rate != 16000:
+            audio_float = self._resample(audio_float, self.audio_format.sample_rate, 16000)
+
+        # Convert to int16
+        audio_int16 = (audio_float * 32767.0).astype(np.int16)
+
+        buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_file:
             wav_file.setnchannels(1)  # Mono
-            wav_file.setsampwidth(self.audio_format.sample_width)
-            wav_file.setframerate(self.audio_format.sample_rate)
-            wav_file.writeframes(audio_data.tobytes())
+            wav_file.setsampwidth(2)   # 16-bit
+            wav_file.setframerate(16000)  # 16kHz
+            wav_file.writeframes(audio_int16.tobytes())
 
         return buffer.getvalue()
 
@@ -347,6 +719,14 @@ class OpenAIWhisperPipe(BasePipe):
             # Concatenate buffer
             full_buffer = np.vstack(self.buffer)
 
+            # Check if buffer is mostly silence
+            if self._is_silence(full_buffer):
+                self.logger.debug("Skipping transcription: audio is silence")
+                # Reset buffer
+                self.buffer = []
+                self.buffer_samples = 0
+                return None
+
             # Transcribe
             try:
                 text = self._transcribe(full_buffer)
@@ -356,6 +736,19 @@ class OpenAIWhisperPipe(BasePipe):
                 self.buffer_samples = 0
 
                 if text:
+                    # Check for hallucinations
+                    if self._is_hallucination(text):
+                        self.logger.info(f"Skipped hallucination: '{text}'")
+                        return None
+
+                    # Check for repetitions
+                    if self._is_repetition(text):
+                        self.logger.info(f"Skipped repetition: '{text}'")
+                        return None
+
+                    # Update recent transcriptions
+                    self._update_recent_transcriptions(text)
+
                     return text
             except Exception as e:
                 self.logger.error(f"API transcription failed: {e}", exc_info=True)
@@ -376,6 +769,13 @@ class OpenAIWhisperPipe(BasePipe):
 
         full_buffer = np.vstack(self.buffer)
 
+        # Check if buffer is mostly silence
+        if self._is_silence(full_buffer):
+            self.logger.debug("Skipping flush transcription: audio is silence")
+            self.buffer = []
+            self.buffer_samples = 0
+            return None
+
         try:
             text = self._transcribe(full_buffer)
 
@@ -384,6 +784,19 @@ class OpenAIWhisperPipe(BasePipe):
             self.buffer_samples = 0
 
             if text:
+                # Check for hallucinations
+                if self._is_hallucination(text):
+                    self.logger.info(f"Skipped hallucination during flush: '{text}'")
+                    return None
+
+                # Check for repetitions
+                if self._is_repetition(text):
+                    self.logger.info(f"Skipped repetition during flush: '{text}'")
+                    return None
+
+                # Update recent transcriptions
+                self._update_recent_transcriptions(text)
+
                 return text
         except Exception as e:
             self.logger.error(f"API transcription failed during flush: {e}", exc_info=True)

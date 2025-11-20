@@ -29,7 +29,7 @@ class AudioFormat:
         Args:
             sample_rate: Sample rate in Hz (default: 48000)
             channels: Number of audio channels (default: 2)
-            sample_width: Bytes per sample (default: 2 for s16le)
+            sample_width: Bytes per sample (default: 2 for s16le, 8 for float64)
             dtype: NumPy dtype for audio data (default: np.int16)
         """
         self.sample_rate = sample_rate
@@ -72,6 +72,17 @@ class BasePipe(ABC):
         """
         pass
 
+    def flush(self) -> Any:
+        """Flush any remaining buffered data.
+
+        Called at the end of processing to handle any buffered data.
+        Subclasses can override this to implement custom flushing logic.
+
+        Returns:
+            Processed output (type varies by pipe implementation), or None if nothing to flush
+        """
+        return None
+
     def read_wav_header(self, stream: BinaryIO) -> Optional[AudioFormat]:
         """Attempt to read WAV header from stream.
 
@@ -97,9 +108,15 @@ class BasePipe(ABC):
             channels = struct.unpack("<H", header[22:24])[0]
             sample_rate = struct.unpack("<I", header[24:28])[0]
             bits_per_sample = struct.unpack("<H", header[34:36])[0]
+            audio_format = struct.unpack("<H", header[20:22])[0]  # 1=PCM, 3=IEEE float
 
-            dtype_map = {8: np.uint8, 16: np.int16, 24: np.int32, 32: np.int32}
-            dtype = dtype_map.get(bits_per_sample, np.int16)
+            # Determine dtype based on format and bits
+            if audio_format == 3:  # IEEE float
+                dtype_map = {32: np.float32, 64: np.float64}
+                dtype = dtype_map.get(bits_per_sample, np.float32)
+            else:  # PCM or other
+                dtype_map = {8: np.uint8, 16: np.int16, 24: np.int32, 32: np.int32}
+                dtype = dtype_map.get(bits_per_sample, np.int16)
 
             return AudioFormat(
                 sample_rate=sample_rate,
@@ -201,9 +218,19 @@ class BasePipe(ABC):
         try:
             for result in self.run_stream(input_stream, chunk_size):
                 if isinstance(result, str):
-                    output_stream.write(result)
-                    if not result.endswith("\n"):
-                        output_stream.write("\n")
+                    try:
+                        output_stream.write(result)
+                        if not result.endswith("\n"):
+                            output_stream.write("\n")
+                    except OSError as e:
+                        # On Windows, writing text to stdout in a binary pipe context fails
+                        # Fall back to stderr for text output
+                        self.logger.debug(f"Failed to write to stdout ({e}), using stderr")
+                        sys.stderr.write(result)
+                        if not result.endswith("\n"):
+                            sys.stderr.write("\n")
+                        sys.stderr.flush()
+                        continue
                 elif isinstance(result, bytes):
                     # For binary output, write to buffer
                     if hasattr(output_stream, "buffer"):
@@ -218,12 +245,69 @@ class BasePipe(ABC):
                         output_stream.write(result.tobytes())
                 else:
                     # Convert to string representation
-                    output_stream.write(str(result))
-                    output_stream.write("\n")
+                    try:
+                        output_stream.write(str(result))
+                        output_stream.write("\n")
+                    except OSError as e:
+                        # On Windows, writing text to stdout in a binary pipe context fails
+                        # Fall back to stderr for text output
+                        self.logger.debug(f"Failed to write to stdout ({e}), using stderr")
+                        sys.stderr.write(str(result))
+                        sys.stderr.write("\n")
+                        sys.stderr.flush()
+                        continue
 
                 output_stream.flush()
+
+            # Flush any remaining buffered data
+            flush_result = self.flush()
+            if flush_result is not None:
+                if isinstance(flush_result, str):
+                    try:
+                        output_stream.write(flush_result)
+                        if not flush_result.endswith("\n"):
+                            output_stream.write("\n")
+                        output_stream.flush()
+                    except OSError as e:
+                        # On Windows, writing text to stdout in a binary pipe context fails
+                        # Fall back to stderr for text output
+                        self.logger.debug(f"Failed to write flush result to stdout ({e}), using stderr")
+                        sys.stderr.write(flush_result)
+                        if not flush_result.endswith("\n"):
+                            sys.stderr.write("\n")
+                        sys.stderr.flush()
+                elif isinstance(flush_result, bytes):
+                    if hasattr(output_stream, "buffer"):
+                        output_stream.buffer.write(flush_result)
+                    else:
+                        output_stream.write(flush_result)
+                    output_stream.flush()
+                elif isinstance(flush_result, np.ndarray):
+                    if hasattr(output_stream, "buffer"):
+                        output_stream.buffer.write(flush_result.tobytes())
+                    else:
+                        output_stream.write(flush_result.tobytes())
+                    output_stream.flush()
+                else:
+                    try:
+                        output_stream.write(str(flush_result))
+                        output_stream.write("\n")
+                        output_stream.flush()
+                    except OSError as e:
+                        # On Windows, writing text to stdout in a binary pipe context fails
+                        # Fall back to stderr for text output
+                        self.logger.debug(f"Failed to write flush result to stdout ({e}), using stderr")
+                        sys.stderr.write(str(flush_result))
+                        sys.stderr.write("\n")
+                        sys.stderr.flush()
+
         except KeyboardInterrupt:
             self.logger.info("Interrupted by user")
+            # Call flush even on interrupt to ensure clean shutdown
+            try:
+                self.flush()
+            except Exception:
+                pass
         except Exception as e:
             self.logger.error(f"Fatal error: {e}", exc_info=True)
             sys.exit(1)

@@ -41,6 +41,12 @@ Real-time volume meter with audio passthrough for pipeline monitoring.
 **CLI**: `proctap-volume-meter`
 **Module**: `proctap_pipes.VolumeMeterPipe`
 
+### 5. AudioEffectsPipe
+Real-time audio effects processing (noise reduction, normalization, EQ) to improve audio quality.
+
+**CLI**: `proctap-effects`
+**Module**: `proctap_pipes.AudioEffectsPipe`
+
 ## Installation
 
 ```bash
@@ -74,10 +80,93 @@ proctap -pid 1234 --stdout | proctap-whisper | proctap-llm
 # Full pipeline: monitor volume, transcribe, and send to webhook
 proctap -pid 1234 --stdout | proctap-volume-meter | proctap-whisper | proctap-webhook https://example.com/hook
 
+# Use audio effects to improve transcription accuracy
+proctap -pid 1234 --stdout | proctap-effects --denoise --normalize | proctap-whisper
+
+# Full enhancement pipeline with filters
+proctap -pid 1234 --stdout | proctap-effects --denoise --normalize --highpass 80 --lowpass 8000 | proctap-whisper
+
 # Use OpenAI API for Whisper
 export OPENAI_API_KEY="sk-..."
 proctap -pid 1234 --stdout | proctap-whisper --api --model whisper-1
 ```
+
+**Windows PowerShell users**: PowerShell has issues with binary piping. Use `.exe` directly from your virtual environment:
+
+```powershell
+# Activate venv first
+.\venv\Scripts\Activate.ps1
+
+# Use .exe directly for binary pipelines
+.\venv\Scripts\proctap.exe --pid 54856 --stdout | .\venv\Scripts\proctap-volume-meter.exe | .\venv\Scripts\proctap-whisper.exe
+
+# Or save to file
+.\venv\Scripts\proctap.exe --pid 54856 --stdout | .\venv\Scripts\proctap-volume-meter.exe > audio.pcm
+```
+
+**Alternative for Windows**: Use Command Prompt (`cmd.exe`) for seamless binary piping:
+
+```cmd
+REM Works perfectly in cmd.exe
+proctap --pid 54856 --stdout | proctap-volume-meter | proctap-whisper
+```
+
+**Note on Windows Output**: When piping on Windows, text output (like transcriptions) automatically redirects to stderr instead of stdout due to Windows pipe limitations. This is transparent to the user - you'll still see all output in your terminal. If you need to redirect transcription output to a file, use stderr redirection:
+
+```cmd
+REM Capture transcriptions to file
+proctap --pid 54856 --stdout | proctap-whisper 2> transcriptions.txt
+```
+
+## Troubleshooting
+
+### Poor Transcription Accuracy
+
+If you're getting poor or repetitive transcriptions, try these steps:
+
+1. **Enable verbose logging to diagnose audio format issues**:
+   ```bash
+   proctap --pid 1234 --stdout | proctap-whisper -v
+   ```
+
+   Check the debug output for:
+   - Input audio dtype (should be int16)
+   - Min/max values (int16 range: -32768 to 32767)
+   - If values are outside this range, there may be a format mismatch
+
+2. **Use a larger model for better accuracy**:
+   ```bash
+   # Small model (faster, good accuracy)
+   proctap --pid 1234 --stdout | proctap-whisper -m small
+
+   # Medium model (balanced)
+   proctap --pid 1234 --stdout | proctap-whisper -m medium
+
+   # Large v3 model (best accuracy, slowest)
+   proctap --pid 1234 --stdout | proctap-whisper -m large-v3
+   ```
+
+3. **Specify language explicitly** (especially for non-English):
+   ```bash
+   proctap --pid 1234 --stdout | proctap-whisper -l ja  # Japanese
+   proctap --pid 1234 --stdout | proctap-whisper -l es  # Spanish
+   ```
+
+4. **Adjust buffer duration** (default 5.0 seconds):
+   ```bash
+   # Longer buffer for more context
+   proctap --pid 1234 --stdout | proctap-whisper -b 10.0
+   ```
+
+5. **Use OpenAI API for best accuracy** (requires API key):
+   ```bash
+   export OPENAI_API_KEY="sk-..."
+   proctap --pid 1234 --stdout | proctap-whisper --api --model whisper-1
+   ```
+
+6. **Check if audio format conversion is needed**:
+
+   If verbose logs show unexpected dtypes or values, you may need to convert the audio format. Contact ProcTap support or check the audio capture settings.
 
 ### Python Module Usage
 
@@ -280,6 +369,53 @@ proctap -pid 1234 --stdout | proctap-volume-meter -b 80 -u 0.1
 proctap -pid 1234 --stdout | proctap-volume-meter --no-peak
 ```
 
+### proctap-effects
+
+Apply real-time audio effects to improve audio quality.
+
+```bash
+proctap-effects [OPTIONS]
+
+Options:
+  -r, --sample-rate INTEGER   Sample rate in Hz [default: 48000]
+  -c, --channels INTEGER      Number of channels [default: 2]
+  -w, --sample-width INTEGER  Sample width in bytes [default: 2]
+  -d, --denoise               Enable noise reduction
+  --noise-mode TEXT           Noise reduction algorithm: simple (fast, 2200x real-time), spectral_gate (balanced, 145x), wiener (best quality, 550x) [default: simple]
+  -t, --noise-threshold FLOAT Noise reduction threshold, 0.0-1.0 [default: 0.02]
+  -n, --normalize             Enable volume normalization
+  -l, --target-level FLOAT    Target volume level, 0.0-1.0 [default: 0.7]
+  -hp, --highpass FLOAT       High-pass filter cutoff frequency in Hz
+  -lp, --lowpass FLOAT        Low-pass filter cutoff frequency in Hz
+  --chunk-size INTEGER        Audio chunk size [default: 4096]
+  -v, --verbose               Enable verbose logging
+```
+
+**Examples:**
+
+```bash
+# Apply noise reduction (fast mode, default)
+proctap -pid 1234 --stdout | proctap-effects --denoise | proctap-whisper
+
+# Use spectral gate for better quality
+proctap -pid 1234 --stdout | proctap-effects --denoise --noise-mode spectral_gate | proctap-whisper
+
+# Best quality with Wiener filter
+proctap -pid 1234 --stdout | proctap-effects --denoise --noise-mode wiener | proctap-whisper
+
+# Normalize volume for consistent transcription
+proctap -pid 1234 --stdout | proctap-effects --normalize | proctap-whisper
+
+# Remove low-frequency rumble and high-frequency hiss
+proctap -pid 1234 --stdout | proctap-effects --highpass 80 --lowpass 8000 | proctap-whisper
+
+# Full audio enhancement pipeline (fast mode)
+proctap -pid 1234 --stdout | proctap-effects --denoise --normalize --highpass 80 --lowpass 8000 | proctap-whisper
+
+# Aggressive noise reduction
+proctap -pid 1234 --stdout | proctap-effects --denoise --noise-threshold 0.001 | proctap-whisper
+```
+
 ## Python API Reference
 
 ### BasePipe
@@ -460,6 +596,7 @@ Both raw PCM and WAV formats are automatically detected and supported.
 4. **OS-agnostic**: Pure processing, no platform-specific audio capture
 5. **Type Safety**: Fully typed with mypy support
 6. **Logging**: Diagnostics always go to stderr, never stdout
+7. **Windows Compatibility**: Automatic fallback to stderr for text output in binary pipe contexts
 
 ## Development
 

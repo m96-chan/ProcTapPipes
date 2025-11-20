@@ -31,6 +31,10 @@ def setup_logging(verbose: bool) -> None:
         stream=sys.stderr,
     )
 
+    # Suppress verbose faster-whisper logs unless in verbose mode
+    if not verbose:
+        logging.getLogger("faster_whisper").setLevel(logging.WARNING)
+
 
 @click.command()
 @click.option(
@@ -94,6 +98,28 @@ def setup_logging(verbose: bool) -> None:
     help="Number of audio channels (default: 2)",
 )
 @click.option(
+    "--beam-size",
+    default=5,
+    type=int,
+    help="Beam size for decoding (lower = faster, higher = more accurate). Default: 5",
+)
+@click.option(
+    "--silence-threshold",
+    default=0.01,
+    type=float,
+    help="RMS threshold below which audio is considered silence (0.0-1.0). Default: 0.01",
+)
+@click.option(
+    "--no-skip-repetitions",
+    is_flag=True,
+    help="Disable skipping repeated transcriptions",
+)
+@click.option(
+    "--no-skip-hallucinations",
+    is_flag=True,
+    help="Disable skipping known hallucination phrases",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -110,6 +136,10 @@ def main(
     no_vad: bool,
     rate: int,
     channels: int,
+    beam_size: int,
+    silence_threshold: float,
+    no_skip_repetitions: bool,
+    no_skip_hallucinations: bool,
     verbose: bool,
 ) -> None:
     """Transcribe audio from stdin using Whisper.
@@ -159,6 +189,9 @@ def main(
                 language=language,
                 audio_format=audio_format,
                 buffer_duration=buffer,
+                silence_threshold=silence_threshold,
+                skip_repetitions=not no_skip_repetitions,
+                skip_hallucinations=not no_skip_hallucinations,
             )
         else:
             # Use local faster-whisper
@@ -168,8 +201,12 @@ def main(
                 audio_format=audio_format,
                 device=device,
                 compute_type=compute_type,
+                beam_size=beam_size,
                 buffer_duration=buffer,
                 vad_filter=not no_vad,
+                silence_threshold=silence_threshold,
+                skip_repetitions=not no_skip_repetitions,
+                skip_hallucinations=not no_skip_hallucinations,
             )
 
         # Run CLI mode
@@ -178,7 +215,15 @@ def main(
         # Flush any remaining audio
         result = pipe.flush()
         if result:
-            print(result)
+            try:
+                print(result)
+            except OSError:
+                # On Windows, writing to stdout in a binary pipe context fails
+                # Write to stderr instead
+                sys.stderr.write(result)
+                if not result.endswith("\n"):
+                    sys.stderr.write("\n")
+                sys.stderr.flush()
 
     except KeyboardInterrupt:
         sys.exit(0)

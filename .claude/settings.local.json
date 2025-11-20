@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pip install:*)",
+      "Bash(test:*)",
+      "Bash(./venv/Scripts/python.exe scripts/create_ps1_wrappers.py venv/Scripts)",
+      "Bash(.venvScriptspython.exe -m pip install -e .)",
+      "Bash(proctap-effects:*)",
+      "Bash(python -m proctap_pipes.cli.audio_effects_cli:*)",
+      "Bash(python test_audio_effects.py:*)",
+      "Bash(python demo_audio_effects.py:*)",
+      "Bash(python:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

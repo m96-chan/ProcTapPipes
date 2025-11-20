@@ -8,6 +8,7 @@ from proctap_pipes.base import BasePipe
 from proctap_pipes.whisper_pipe import WhisperPipe, OpenAIWhisperPipe
 from proctap_pipes.llm_pipe import LLMPipe, LLMPipeWithContext, LLMIntent
 from proctap_pipes.volume_meter_pipe import VolumeMeterPipe
+from proctap_pipes.audio_effects_pipe import AudioEffectsPipe
 from proctap_pipes.webhook_pipe import (
     BaseWebhookPipe,
     WebhookPipe,
@@ -27,6 +28,7 @@ __all__ = [
     "LLMPipeWithContext",
     "LLMIntent",
     "VolumeMeterPipe",
+    "AudioEffectsPipe",
     "BaseWebhookPipe",
     "WebhookPipe",
     "SlackWebhookPipe",
