@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Simple test script for AudioEffectsPipe."""
 
 import sys
 
 import numpy as np
+
 from proctap_pipes import AudioEffectsPipe
 from proctap_pipes.base import AudioFormat
 
@@ -102,9 +102,7 @@ def test_filters():
     print("Testing filters...")
 
     audio_format = AudioFormat(sample_rate=48000, channels=2)
-    pipe = AudioEffectsPipe(
-        audio_format=audio_format, highpass=100.0, lowpass=8000.0, verbose=True
-    )
+    pipe = AudioEffectsPipe(audio_format=audio_format, highpass=100.0, lowpass=8000.0, verbose=True)
 
     # Generate test audio
     test_audio = generate_test_audio(duration_sec=0.1)
@@ -142,7 +140,7 @@ def test_combined():
     for i in range(10):
         chunk = test_audio[i * chunk_size : (i + 1) * chunk_size]
         if len(chunk) > 0:
-            processed = pipe.process_chunk(chunk)
+            _ = pipe.process_chunk(chunk)
             print(f"Processed chunk {i+1}/{10}")
 
     print("✓ Combined effects test passed\n")

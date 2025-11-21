@@ -1,12 +1,12 @@
 """LLM processing pipe for audio transcriptions and text processing."""
 
 import json
-from typing import Any, Optional, Callable
 import logging
+from typing import Any
 
 import numpy.typing as npt
 
-from proctap_pipes.base import BasePipe, AudioFormat
+from proctap_pipes.base import AudioFormat, BasePipe
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +24,13 @@ class LLMPipe(BasePipe):
     def __init__(
         self,
         model: str = "gpt-3.5-turbo",
-        api_key: Optional[str] = None,
-        system_prompt: Optional[str] = None,
+        api_key: str | None = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        base_url: Optional[str] = None,
+        max_tokens: int | None = None,
+        base_url: str | None = None,
         text_mode: bool = True,
-        audio_format: Optional[AudioFormat] = None,
+        audio_format: AudioFormat | None = None,
     ):
         """Initialize LLM processing pipe.
 
@@ -102,7 +102,7 @@ class LLMPipe(BasePipe):
             self.logger.error(f"LLM processing failed: {e}", exc_info=True)
             return f"[ERROR: {str(e)}]"
 
-    def process_chunk(self, audio_data: npt.NDArray[Any]) -> Optional[str]:
+    def process_chunk(self, audio_data: npt.NDArray[Any]) -> str | None:
         """Process audio chunk (not supported in text mode).
 
         Args:
@@ -151,9 +151,7 @@ class LLMPipeWithContext(LLMPipe):
         """
         super().__init__(**kwargs)
         self.max_context_messages = max_context_messages
-        self.context: list[dict[str, str]] = [
-            {"role": "system", "content": self.system_prompt}
-        ]
+        self.context: list[dict[str, str]] = [{"role": "system", "content": self.system_prompt}]
 
     def process_text(self, text: str) -> str:
         """Process text through the LLM with context.
@@ -170,7 +168,7 @@ class LLMPipeWithContext(LLMPipe):
 
             # Trim context if needed (keep system message + last N messages)
             if len(self.context) > self.max_context_messages + 1:
-                self.context = [self.context[0]] + self.context[-(self.max_context_messages):]
+                self.context = [self.context[0]] + self.context[-(self.max_context_messages) :]
 
             completion_kwargs = {
                 "model": self.model_name,
@@ -207,7 +205,7 @@ class LLMIntent(LLMPipe):
 
     def __init__(
         self,
-        intents: Optional[list[str]] = None,
+        intents: list[str] | None = None,
         output_format: str = "json",
         **kwargs: Any,
     ):
@@ -255,11 +253,13 @@ class LLMIntent(LLMPipe):
                 json.loads(result)
             except json.JSONDecodeError:
                 self.logger.warning("LLM did not return valid JSON")
-                return json.dumps({
-                    "intent": "unknown",
-                    "entities": {},
-                    "confidence": 0.0,
-                    "raw_response": result,
-                })
+                return json.dumps(
+                    {
+                        "intent": "unknown",
+                        "entities": {},
+                        "confidence": 0.0,
+                        "raw_response": result,
+                    }
+                )
 
         return result

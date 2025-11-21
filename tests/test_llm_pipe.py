@@ -1,13 +1,11 @@
 """Tests for LLM pipe."""
 
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
-import pytest
-
-from proctap_pipes.llm_pipe import LLMPipe, LLMPipeWithContext, LLMIntent
+from proctap_pipes.llm_pipe import LLMIntent, LLMPipe, LLMPipeWithContext
 
 
-@patch("proctap_pipes.llm_pipe.OpenAI")
+@patch("openai.OpenAI")
 def test_llm_pipe_initialization(mock_openai: Mock) -> None:
     """Test LLM pipe initialization."""
     pipe = LLMPipe(model="gpt-3.5-turbo", api_key="test-key")
@@ -17,7 +15,7 @@ def test_llm_pipe_initialization(mock_openai: Mock) -> None:
     assert mock_openai.called
 
 
-@patch("proctap_pipes.llm_pipe.OpenAI")
+@patch("openai.OpenAI")
 def test_llm_process_text(mock_openai_class: Mock) -> None:
     """Test text processing."""
     # Create mock response
@@ -41,7 +39,7 @@ def test_llm_process_text(mock_openai_class: Mock) -> None:
     assert mock_client.chat.completions.create.called
 
 
-@patch("proctap_pipes.llm_pipe.OpenAI")
+@patch("openai.OpenAI")
 def test_llm_with_context(mock_openai_class: Mock) -> None:
     """Test LLM pipe with context tracking."""
     # Setup mock
@@ -68,7 +66,7 @@ def test_llm_with_context(mock_openai_class: Mock) -> None:
     assert len(pipe.context) == 5
 
 
-@patch("proctap_pipes.llm_pipe.OpenAI")
+@patch("openai.OpenAI")
 def test_llm_context_reset(mock_openai_class: Mock) -> None:
     """Test context reset."""
     mock_client = Mock()
@@ -85,7 +83,7 @@ def test_llm_context_reset(mock_openai_class: Mock) -> None:
     assert len(pipe.context) == 1  # Only system message
 
 
-@patch("proctap_pipes.llm_pipe.OpenAI")
+@patch("openai.OpenAI")
 def test_llm_intent_extraction(mock_openai_class: Mock) -> None:
     """Test intent extraction."""
     # Setup mock to return JSON
@@ -113,14 +111,15 @@ def test_llm_intent_extraction(mock_openai_class: Mock) -> None:
 
     # Should return valid JSON
     import json
+
     parsed = json.loads(result)
     assert parsed["intent"] == "greeting"
 
 
-@patch("proctap_pipes.llm_pipe.OpenAI")
+@patch("openai.OpenAI")
 def test_llm_custom_base_url(mock_openai_class: Mock) -> None:
     """Test custom base URL."""
-    pipe = LLMPipe(
+    _ = LLMPipe(
         model="gpt-3.5-turbo",
         api_key="test-key",
         base_url="https://custom.api.com",

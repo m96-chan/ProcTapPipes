@@ -6,9 +6,8 @@ Usage:
     proctap -pid 1234 --stdout | proctap-whisper | proctap-llm
 """
 
-import sys
 import logging
-from typing import Optional
+import sys
 
 import click
 
@@ -84,11 +83,11 @@ def setup_logging(verbose: bool) -> None:
 )
 def main(
     model: str,
-    api_key: Optional[str],
-    system_prompt: Optional[str],
+    api_key: str | None,
+    system_prompt: str | None,
     temperature: float,
-    max_tokens: Optional[int],
-    base_url: Optional[str],
+    max_tokens: int | None,
+    base_url: str | None,
     context: bool,
     max_context: int,
     verbose: bool,

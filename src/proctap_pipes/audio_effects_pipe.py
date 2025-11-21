@@ -4,7 +4,6 @@ This pipe applies various audio effects (noise reduction, normalization, EQ, etc
 while passing through processed audio data, allowing it to be used in pipelines.
 """
 
-import sys
 from enum import Enum
 from typing import Any
 
@@ -176,7 +175,7 @@ class AudioEffectsPipe(BasePipe):
             gain = np.where(
                 amplitude > threshold,
                 1.0,
-                amplitude / (threshold + 1e-10)  # Gradual reduction below threshold
+                amplitude / (threshold + 1e-10),  # Gradual reduction below threshold
             )
 
             return audio_data * gain

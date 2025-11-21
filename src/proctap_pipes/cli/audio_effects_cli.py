@@ -8,13 +8,15 @@ Usage:
     proctap -pid 1234 --stdout | proctap-effects --denoise | proctap-whisper
 
     # Apply multiple effects
-    proctap -pid 1234 --stdout | proctap-effects --denoise --normalize --highpass 80 | proctap-whisper
+    proctap -pid 1234 --stdout | proctap-effects --denoise --normalize \\
+        --highpass 80 | proctap-whisper
 
     # Just normalize volume
     proctap -pid 1234 --stdout | proctap-effects --normalize | proctap-whisper
 
     # Full enhancement pipeline
-    proctap -pid 1234 --stdout | proctap-effects --denoise --normalize --highpass 80 --lowpass 8000 | proctap-whisper
+    proctap -pid 1234 --stdout | proctap-effects --denoise --normalize \\
+        --highpass 80 --lowpass 8000 | proctap-whisper
 """
 
 import logging
@@ -72,7 +74,10 @@ def setup_logging(verbose: bool) -> None:
     "--noise-mode",
     type=click.Choice(["simple", "spectral_gate", "wiener"], case_sensitive=False),
     default="simple",
-    help="Noise reduction algorithm: simple (fast), spectral_gate (balanced), wiener (slow, best quality). Default: simple",
+    help=(
+        "Noise reduction algorithm: simple (fast), spectral_gate (balanced), "
+        "wiener (slow, best quality). Default: simple"
+    ),
 )
 @click.option(
     "--noise-threshold",
@@ -172,9 +177,7 @@ def main(
 
     # Check if any effects are enabled
     if not any([denoise, normalize, highpass is not None, lowpass is not None]):
-        click.echo(
-            "Warning: No effects enabled. Audio will pass through unchanged.", err=True
-        )
+        click.echo("Warning: No effects enabled. Audio will pass through unchanged.", err=True)
         click.echo(
             "Use --denoise, --normalize, --highpass, or --lowpass to enable effects.", err=True
         )
