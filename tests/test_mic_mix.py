@@ -143,6 +143,26 @@ def test_convert_stereo_to_mono() -> None:
         np.testing.assert_array_almost_equal(result, expected, decimal=0)
 
 
+def test_convert_mono_to_stereo() -> None:
+    """Test converting mono mic input to stereo (common use case)."""
+    with patch("proctap_pipes.mic_mix_pipe.MicMixPipe._init_mic_capture"):
+        # Test case where mic is mono but output is stereo (ProcTap standard)
+        pipe = MicMixPipe(
+            audio_format=AudioFormat(sample_rate=48000, channels=2, sample_width=2),
+            mic_sample_rate=48000,
+            mic_channels=1,
+        )
+
+        # Create mono audio
+        mono_audio = np.array([[100], [300], [500]], dtype=np.int16)
+
+        result = pipe._convert_to_stereo(mono_audio)
+
+        # Should duplicate the mono channel to both L and R
+        expected = np.array([[100, 100], [300, 300], [500, 500]], dtype=np.int16)
+        np.testing.assert_array_equal(result, expected)
+
+
 def test_process_chunk_with_mic_input(mock_mic_device: Mock) -> None:
     """Test processing audio chunk with microphone input."""
     with patch("proctap_pipes.mic_mix_pipe.MicMixPipe._init_mic_capture"):

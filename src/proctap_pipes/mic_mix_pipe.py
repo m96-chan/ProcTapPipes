@@ -203,6 +203,22 @@ class MicMixPipe(BasePipe):
         mono = np.mean(audio_data, axis=1, dtype=np.float32).astype(np.int16)
         return mono.reshape(-1, 1)
 
+    def _convert_to_stereo(self, audio_data: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        """Convert mono audio to stereo by duplicating the channel.
+
+        Args:
+            audio_data: Mono audio with shape (samples, 1)
+
+        Returns:
+            Stereo audio with shape (samples, 2)
+        """
+        if audio_data.shape[1] >= 2:
+            return audio_data
+
+        # Duplicate mono channel to both left and right
+        stereo = np.column_stack([audio_data[:, 0], audio_data[:, 0]])
+        return stereo
+
     def _mix_audio(
         self, proctap_audio: npt.NDArray[Any], mic_audio: npt.NDArray[Any]
     ) -> npt.NDArray[Any]:
@@ -266,10 +282,14 @@ class MicMixPipe(BasePipe):
             if self.mic_sample_rate != self.audio_format.sample_rate:
                 mic_audio = self._resample_mic_audio(mic_audio)
 
-            # Convert to mono if needed
+            # Convert channel count if needed
             if self.mic_channels != self.audio_format.channels:
                 if self.audio_format.channels == 1:
+                    # Output is mono, convert mic to mono
                     mic_audio = self._convert_to_mono(mic_audio)
+                elif self.mic_channels == 1 and self.audio_format.channels == 2:
+                    # Mic is mono, output is stereo - duplicate channel
+                    mic_audio = self._convert_to_stereo(mic_audio)
 
             # Ensure mic audio matches ProcTap audio length
             if len(mic_audio) != len(audio_data):
