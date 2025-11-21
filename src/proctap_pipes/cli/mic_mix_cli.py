@@ -57,8 +57,9 @@ def list_audio_devices() -> None:
     try:
         import sounddevice as sd
 
-        click.echo("Available audio input devices:", err=True)
-        click.echo("=" * 60, err=True)
+        # Use stdout instead of stderr to avoid Windows console errors
+        print("Available audio input devices:")
+        print("=" * 60)
 
         devices = sd.query_devices()
         for idx, device in enumerate(devices):
@@ -67,20 +68,17 @@ def list_audio_devices() -> None:
                 channels = device["max_input_channels"]
                 sample_rate = device["default_samplerate"]
                 default_marker = " (default)" if idx == sd.default.device[0] else ""
-                click.echo(
+                print(
                     f"  [{idx}] {name}{default_marker}\n"
-                    f"       Channels: {channels}, Sample Rate: {sample_rate} Hz",
-                    err=True,
+                    f"       Channels: {channels}, Sample Rate: {sample_rate} Hz"
                 )
 
     except ImportError:
-        click.echo(
-            "Error: sounddevice library not installed.\n" "Install with: pip install sounddevice",
-            err=True,
-        )
+        print("Error: sounddevice library not installed.")
+        print("Install with: pip install sounddevice")
         sys.exit(1)
     except Exception as e:
-        click.echo(f"Error listing devices: {e}", err=True)
+        print(f"Error listing devices: {e}")
         sys.exit(1)
 
 
@@ -184,7 +182,7 @@ def main(
 
     # Validate options
     if gain < 0.0 or gain > 2.0:
-        click.echo("Error: gain must be between 0.0 and 2.0", err=True)
+        print("Error: gain must be between 0.0 and 2.0", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -210,15 +208,15 @@ def main(
             enable_mic=not no_mic,
         )
 
-        # Show status
+        # Show status to stderr using print to avoid Windows console errors
         if no_mic:
-            click.echo("Mic Mix (Passthrough mode - no mic)", err=True)
+            print("Mic Mix (Passthrough mode - no mic)", file=sys.stderr)
         else:
-            click.echo(
+            print(
                 f"Mic Mix (Gain: {gain:.1f}, "
                 f"Format: {sample_rate}Hz {channels}ch, "
                 f"Ctrl+C to stop)",
-                err=True,
+                file=sys.stderr,
             )
 
         # Run CLI with mixing
@@ -229,10 +227,10 @@ def main(
         )
 
     except KeyboardInterrupt:
-        click.echo("\nStopped by user", err=True)
+        print("\nStopped by user", file=sys.stderr)
         sys.exit(0)
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
+        print(f"Error: {e}", file=sys.stderr)
         if verbose:
             import traceback
 
