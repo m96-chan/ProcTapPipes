@@ -191,6 +191,25 @@ def main(
         if device is not None and device.isdigit():
             mic_device_parsed = int(device)
 
+        # Auto-detect mic channels if device is specified and mic_channels not explicitly set
+        # This prevents "Invalid number of channels" errors
+        actual_mic_channels = mic_channels
+        if mic_device_parsed is not None and mic_channels == 2:  # 2 is the default
+            try:
+                import sounddevice as sd
+
+                device_info = sd.query_devices(mic_device_parsed)
+                max_channels = int(device_info["max_input_channels"])
+                if max_channels < mic_channels:
+                    actual_mic_channels = max_channels
+                    print(
+                        f"Auto-adjusting mic channels from {mic_channels} to {actual_mic_channels} "
+                        f"(device supports max {max_channels} channels)",
+                        file=sys.stderr,
+                    )
+            except Exception:
+                pass  # If detection fails, use the specified value
+
         # Create audio format
         audio_format = AudioFormat(
             sample_rate=sample_rate,
@@ -204,7 +223,7 @@ def main(
             gain=gain,
             mic_device=mic_device_parsed,
             mic_sample_rate=mic_sample_rate,
-            mic_channels=mic_channels,
+            mic_channels=actual_mic_channels,
             enable_mic=not no_mic,
         )
 
