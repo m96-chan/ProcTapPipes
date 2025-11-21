@@ -9,7 +9,17 @@
       "Bash(python -m proctap_pipes.cli.audio_effects_cli:*)",
       "Bash(python test_audio_effects.py:*)",
       "Bash(python demo_audio_effects.py:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh auth status:*)",
+      "Bash(gh auth login:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(pytest:*)",
+      "Bash(black:*)",
+      "Bash(ruff check:*)",
+      "Bash(git add:*)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []

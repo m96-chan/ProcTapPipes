@@ -6,13 +6,24 @@ or further processing.
 
 Usage:
     # Mix microphone with ProcTap audio for Whisper transcription
-    proctap -pid 1234 --stdout | proctap-mic-mix | proctap-whisper
+    proctap --pid 1234 --stdout | proctap-mic-mix | proctap-whisper
 
     # Mix with custom gain on microphone
-    proctap -pid 1234 --stdout | proctap-mic-mix --gain 0.8 | proctap-webhook
+    proctap --pid 1234 --stdout | proctap-mic-mix --gain 0.8 | proctap-webhook
 
     # Use specific microphone device
-    proctap -pid 1234 --stdout | proctap-mic-mix --device "USB Microphone" | proctap-whisper
+    proctap --pid 1234 --stdout | proctap-mic-mix --device "USB Microphone" | proctap-whisper
+
+    # Use device index
+    proctap --pid 1234 --stdout | proctap-mic-mix --device 0 | proctap-whisper
+
+    # Record to MP3 file using FFmpeg
+    proctap --pid 1234 --stdout | proctap-mic-mix | \\
+        ffmpeg -f s16le -ar 48000 -ac 2 -i pipe:0 output.mp3
+
+    # Stream to FFmpeg with real-time encoding
+    proctap --pid 1234 --stdout | proctap-mic-mix --gain 0.9 | \\
+        ffmpeg -f s16le -ar 48000 -ac 2 -i pipe:0 -c:a libmp3lame -b:a 192k output.mp3
 
     # List available microphone devices
     proctap-mic-mix --list-devices
