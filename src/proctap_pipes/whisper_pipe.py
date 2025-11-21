@@ -6,14 +6,14 @@ This module provides multiple Whisper implementations:
 """
 
 import io
-import wave
-from typing import Any, Optional
 import logging
+import wave
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 
-from proctap_pipes.base import BasePipe, AudioFormat
+from proctap_pipes.base import AudioFormat, BasePipe
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +52,14 @@ class WhisperPipe(BasePipe):
     def __init__(
         self,
         model: str = "base",
-        language: Optional[str] = None,
-        audio_format: Optional[AudioFormat] = None,
+        language: str | None = None,
+        audio_format: AudioFormat | None = None,
         device: str = "auto",
         compute_type: str = "default",
         buffer_duration: float = 5.0,
         vad_filter: bool = True,
         beam_size: int = 5,
-        initial_prompt: Optional[str] = None,
+        initial_prompt: str | None = None,
         silence_threshold: float = 0.01,
         skip_repetitions: bool = True,
         skip_hallucinations: bool = True,
@@ -71,12 +71,15 @@ class WhisperPipe(BasePipe):
             language: Language code (e.g., 'en', 'ja', 'es'). None for auto-detect.
             audio_format: Audio format configuration
             device: Device to use ('cpu', 'cuda', 'auto')
-            compute_type: Compute type for inference ('default', 'int8', 'int8_float16', 'int16', 'float16')
+            compute_type: Compute type for inference
+                ('default', 'int8', 'int8_float16', 'int16', 'float16')
             buffer_duration: Duration in seconds to buffer before transcribing
             vad_filter: Enable voice activity detection filter
             beam_size: Beam size for beam search decoding
-            initial_prompt: Optional text to guide the model's style and vocabulary (e.g., proper nouns)
-            silence_threshold: RMS threshold below which audio is considered silence (0.0-1.0)
+            initial_prompt: Optional text to guide the model's style and vocabulary
+                (e.g., proper nouns)
+            silence_threshold: RMS threshold below which audio is considered silence
+                (0.0-1.0)
             skip_repetitions: Skip repeated transcriptions to avoid hallucination loops
             skip_hallucinations: Skip common hallucination phrases
         """
@@ -118,14 +121,15 @@ class WhisperPipe(BasePipe):
                 compute_type=self.compute_type,
             )
 
-            self.logger.info(f"Faster-whisper model loaded successfully")
+            self.logger.info("Faster-whisper model loaded successfully")
         except ImportError:
             raise ImportError(
-                "faster-whisper package required. "
-                "Install with: pip install faster-whisper"
+                "faster-whisper package required. " "Install with: pip install faster-whisper"
             )
 
-    def _resample(self, audio: npt.NDArray[np.float32], orig_sr: int, target_sr: int) -> npt.NDArray[np.float32]:
+    def _resample(
+        self, audio: npt.NDArray[np.float32], orig_sr: int, target_sr: int
+    ) -> npt.NDArray[np.float32]:
         """Resample audio to target sample rate using linear interpolation.
 
         Args:
@@ -148,7 +152,9 @@ class WhisperPipe(BasePipe):
         new_indices = np.linspace(0, len(audio) - 1, new_length)
         resampled = np.interp(new_indices, old_indices, audio).astype(np.float32)
 
-        self.logger.debug(f"Resampled from {orig_sr}Hz to {target_sr}Hz: {len(audio)} -> {len(resampled)} samples")
+        msg = f"Resampled from {orig_sr}Hz to {target_sr}Hz: "
+        msg += f"{len(audio)} -> {len(resampled)} samples"
+        self.logger.debug(msg)
 
         return resampled
 
@@ -173,7 +179,9 @@ class WhisperPipe(BasePipe):
         is_silent = rms < self.silence_threshold
 
         if is_silent:
-            self.logger.debug(f"Audio is silent (RMS: {rms:.4f} < threshold: {self.silence_threshold})")
+            msg = f"Audio is silent (RMS: {rms:.4f} < "
+            msg += f"threshold: {self.silence_threshold})"
+            self.logger.debug(msg)
 
         return is_silent
 
@@ -267,14 +275,16 @@ class WhisperPipe(BasePipe):
             max_val = np.abs(audio_data).max()
             if max_val > 1.0:
                 # Unnormalized float, normalize it
-                self.logger.debug(f"Float audio appears unnormalized (max: {max_val}), normalizing...")
+                msg = f"Float audio appears unnormalized (max: {max_val}), normalizing..."
+                self.logger.debug(msg)
                 audio_float = (audio_data / max_val).astype(np.float32)
             else:
                 # Already normalized
                 audio_float = audio_data.astype(np.float32)
         else:
             # Unknown dtype, try to convert
-            self.logger.warning(f"Unexpected audio dtype: {audio_data.dtype}, attempting conversion...")
+            msg = f"Unexpected audio dtype: {audio_data.dtype}, attempting conversion..."
+            self.logger.warning(msg)
             audio_float = audio_data.astype(np.float32)
             max_val = np.abs(audio_float).max()
             if max_val > 1.0:
@@ -284,7 +294,9 @@ class WhisperPipe(BasePipe):
         if self.audio_format.sample_rate != 16000:
             audio_float = self._resample(audio_float, self.audio_format.sample_rate, 16000)
 
-        self.logger.debug(f"Output audio min: {audio_float.min():.4f}, max: {audio_float.max():.4f}")
+        msg = f"Output audio min: {audio_float.min():.4f}, "
+        msg += f"max: {audio_float.max():.4f}"
+        self.logger.debug(msg)
 
         return audio_float
 
@@ -323,7 +335,7 @@ class WhisperPipe(BasePipe):
 
         return result
 
-    def process_chunk(self, audio_data: npt.NDArray[Any]) -> Optional[str]:
+    def process_chunk(self, audio_data: npt.NDArray[Any]) -> str | None:
         """Process audio chunk and return transcription when buffer is full.
 
         Args:
@@ -380,7 +392,7 @@ class WhisperPipe(BasePipe):
 
         return None
 
-    def flush(self) -> Optional[str]:
+    def flush(self) -> str | None:
         """Transcribe any remaining audio in buffer.
 
         Returns:
@@ -446,10 +458,10 @@ class OpenAIWhisperPipe(BasePipe):
         self,
         api_key: str,
         model: str = "whisper-1",
-        language: Optional[str] = None,
-        audio_format: Optional[AudioFormat] = None,
+        language: str | None = None,
+        audio_format: AudioFormat | None = None,
         buffer_duration: float = 5.0,
-        prompt: Optional[str] = None,
+        prompt: str | None = None,
         temperature: float = 0.0,
         silence_threshold: float = 0.01,
         skip_repetitions: bool = True,
@@ -501,8 +513,7 @@ class OpenAIWhisperPipe(BasePipe):
             self.logger.info(f"Initialized OpenAI Whisper API client with model {self.model_name}")
         except ImportError:
             raise ImportError(
-                "openai package required for API usage. "
-                "Install with: pip install openai"
+                "openai package required for API usage. " "Install with: pip install openai"
             )
 
     def _is_silence(self, audio_data: npt.NDArray[Any]) -> bool:
@@ -526,7 +537,9 @@ class OpenAIWhisperPipe(BasePipe):
         is_silent = rms < self.silence_threshold
 
         if is_silent:
-            self.logger.debug(f"Audio is silent (RMS: {rms:.4f} < threshold: {self.silence_threshold})")
+            msg = f"Audio is silent (RMS: {rms:.4f} < "
+            msg += f"threshold: {self.silence_threshold})"
+            self.logger.debug(msg)
 
         return is_silent
 
@@ -592,7 +605,9 @@ class OpenAIWhisperPipe(BasePipe):
         if len(self.recent_transcriptions) > self.max_recent:
             self.recent_transcriptions.pop(0)
 
-    def _resample(self, audio: npt.NDArray[np.float32], orig_sr: int, target_sr: int) -> npt.NDArray[np.float32]:
+    def _resample(
+        self, audio: npt.NDArray[np.float32], orig_sr: int, target_sr: int
+    ) -> npt.NDArray[np.float32]:
         """Resample audio to target sample rate using linear interpolation.
 
         Args:
@@ -615,7 +630,9 @@ class OpenAIWhisperPipe(BasePipe):
         new_indices = np.linspace(0, len(audio) - 1, new_length)
         resampled = np.interp(new_indices, old_indices, audio).astype(np.float32)
 
-        self.logger.debug(f"Resampled from {orig_sr}Hz to {target_sr}Hz: {len(audio)} -> {len(resampled)} samples")
+        msg = f"Resampled from {orig_sr}Hz to {target_sr}Hz: "
+        msg += f"{len(audio)} -> {len(resampled)} samples"
+        self.logger.debug(msg)
 
         return resampled
 
@@ -660,7 +677,7 @@ class OpenAIWhisperPipe(BasePipe):
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_file:
             wav_file.setnchannels(1)  # Mono
-            wav_file.setsampwidth(2)   # 16-bit
+            wav_file.setsampwidth(2)  # 16-bit
             wav_file.setframerate(16000)  # 16kHz
             wav_file.writeframes(audio_int16.tobytes())
 
@@ -701,7 +718,7 @@ class OpenAIWhisperPipe(BasePipe):
 
         return transcript.text.strip()
 
-    def process_chunk(self, audio_data: npt.NDArray[Any]) -> Optional[str]:
+    def process_chunk(self, audio_data: npt.NDArray[Any]) -> str | None:
         """Process audio chunk and return transcription when buffer is full.
 
         Args:
@@ -758,7 +775,7 @@ class OpenAIWhisperPipe(BasePipe):
 
         return None
 
-    def flush(self) -> Optional[str]:
+    def flush(self) -> str | None:
         """Transcribe any remaining audio in buffer.
 
         Returns:

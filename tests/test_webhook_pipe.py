@@ -1,10 +1,6 @@
 """Tests for webhook pipe."""
 
-import json
 from unittest.mock import Mock, patch
-
-import numpy as np
-import pytest
 
 from proctap_pipes.webhook_pipe import WebhookPipe, WebhookPipeText
 

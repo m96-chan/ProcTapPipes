@@ -7,15 +7,13 @@ Usage:
     proctap -pid 1234 --stdout | proctap-whisper --api --model whisper-1
 """
 
-import sys
 import logging
-import os
-from typing import Optional
+import sys
 
 import click
 
-from proctap_pipes.whisper_pipe import WhisperPipe, OpenAIWhisperPipe
 from proctap_pipes.base import AudioFormat
+from proctap_pipes.whisper_pipe import OpenAIWhisperPipe, WhisperPipe
 
 
 def setup_logging(verbose: bool) -> None:
@@ -127,9 +125,9 @@ def setup_logging(verbose: bool) -> None:
 )
 def main(
     model: str,
-    language: Optional[str],
+    language: str | None,
     api: bool,
-    api_key: Optional[str],
+    api_key: str | None,
     buffer: float,
     device: str,
     compute_type: str,

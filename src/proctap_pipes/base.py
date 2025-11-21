@@ -1,12 +1,13 @@
 """Base class for all ProcTapPipes processing modules."""
 
-import sys
+import logging
 import struct
+import sys
 import wave
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from io import BytesIO
-from typing import Iterator, BinaryIO, Optional, Any
-import logging
+from typing import Any, BinaryIO
 
 import numpy as np
 import numpy.typing as npt
@@ -50,7 +51,7 @@ class BasePipe(ABC):
     This class provides standard methods for streaming processing and CLI integration.
     """
 
-    def __init__(self, audio_format: Optional[AudioFormat] = None):
+    def __init__(self, audio_format: AudioFormat | None = None):
         """Initialize the pipe with audio format configuration.
 
         Args:
@@ -83,7 +84,7 @@ class BasePipe(ABC):
         """
         return None
 
-    def read_wav_header(self, stream: BinaryIO) -> Optional[AudioFormat]:
+    def read_wav_header(self, stream: BinaryIO) -> AudioFormat | None:
         """Attempt to read WAV header from stream.
 
         Args:
@@ -170,7 +171,9 @@ class BasePipe(ABC):
                 # Reshape to (samples, channels)
                 if self.audio_format.channels > 1:
                     # Truncate to multiple of channels
-                    samples = samples[: len(samples) // self.audio_format.channels * self.audio_format.channels]
+                    n_channels = self.audio_format.channels
+                    truncate_len = len(samples) // n_channels * n_channels
+                    samples = samples[:truncate_len]
                     samples = samples.reshape(-1, self.audio_format.channels)
                 else:
                     samples = samples.reshape(-1, 1)
@@ -201,8 +204,8 @@ class BasePipe(ABC):
 
     def run_cli(
         self,
-        input_stream: Optional[BinaryIO] = None,
-        output_stream: Optional[BinaryIO] = None,
+        input_stream: BinaryIO | None = None,
+        output_stream: BinaryIO | None = None,
         chunk_size: int = 4096,
     ) -> None:
         """Run the pipe in CLI mode (stdin -> stdout).
@@ -271,7 +274,8 @@ class BasePipe(ABC):
                     except OSError as e:
                         # On Windows, writing text to stdout in a binary pipe context fails
                         # Fall back to stderr for text output
-                        self.logger.debug(f"Failed to write flush result to stdout ({e}), using stderr")
+                        msg = f"Failed to write flush result to stdout ({e}), using stderr"
+                        self.logger.debug(msg)
                         sys.stderr.write(flush_result)
                         if not flush_result.endswith("\n"):
                             sys.stderr.write("\n")
@@ -296,7 +300,8 @@ class BasePipe(ABC):
                     except OSError as e:
                         # On Windows, writing text to stdout in a binary pipe context fails
                         # Fall back to stderr for text output
-                        self.logger.debug(f"Failed to write flush result to stdout ({e}), using stderr")
+                        msg = f"Failed to write flush result to stdout ({e}), using stderr"
+                        self.logger.debug(msg)
                         sys.stderr.write(str(flush_result))
                         sys.stderr.write("\n")
                         sys.stderr.flush()
@@ -312,9 +317,7 @@ class BasePipe(ABC):
             self.logger.error(f"Fatal error: {e}", exc_info=True)
             sys.exit(1)
 
-    def write_wav(
-        self, audio_data: npt.NDArray[Any], output_stream: BinaryIO
-    ) -> None:
+    def write_wav(self, audio_data: npt.NDArray[Any], output_stream: BinaryIO) -> None:
         """Write audio data as WAV format to stream.
 
         Args:

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Test script for Whisper hallucination filtering."""
 
 import sys
@@ -32,9 +31,7 @@ def test_silence_detection():
             # Should not be called for silent audio
             raise AssertionError("Transcription should not be called for silent audio!")
 
-    pipe = MockWhisperPipe(
-        model="base", audio_format=audio_format, silence_threshold=0.01
-    )
+    pipe = MockWhisperPipe(model="base", audio_format=audio_format, silence_threshold=0.01)
 
     # Generate silent audio (very low amplitude)
     silent_audio = np.zeros((240000, 2), dtype=np.int16)  # 5 seconds of silence
@@ -82,7 +79,11 @@ def test_hallucination_filtering():
         ("ありがとうございました", True, "Short Japanese hallucination"),
         ("...", True, "Ellipsis hallucination"),
         ("This is actual speech content", False, "Real content"),
-        ("ご視聴ありがとうございました ご視聴ありがとうございました", True, "Repeated hallucination"),
+        (
+            "ご視聴ありがとうございました ご視聴ありがとうございました",
+            True,
+            "Repeated hallucination",
+        ),
     ]
 
     all_passed = True
@@ -132,9 +133,7 @@ def test_repetition_detection():
 
     # Repeated text - should be filtered
     is_rep3 = pipe._is_repetition(text3)
-    print(
-        f"{'✓' if is_rep3 else '✗'} Repeated text (text3): filtered={is_rep3} (expected: True)"
-    )
+    print(f"{'✓' if is_rep3 else '✗'} Repeated text (text3): filtered={is_rep3} (expected: True)")
 
     if is_rep3:
         print("\n✓ Repetition detection works correctly")

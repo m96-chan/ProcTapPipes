@@ -6,10 +6,9 @@ Usage:
     proctap -pid 1234 --stdout | proctap-whisper | proctap-webhook https://example.com/hook
 """
 
-import sys
-import logging
 import json
-from typing import Optional
+import logging
+import sys
 
 import click
 
@@ -80,10 +79,10 @@ def main(
     url: str,
     method: str,
     header: tuple[str, ...],
-    auth_token: Optional[str],
+    auth_token: str | None,
     timeout: float,
     batch: int,
-    template: Optional[str],
+    template: str | None,
     verbose: bool,
 ) -> None:
     """Send text from stdin to a webhook URL.

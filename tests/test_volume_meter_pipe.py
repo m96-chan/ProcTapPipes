@@ -1,13 +1,13 @@
 """Tests for VolumeMeterPipe."""
 
 import io
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 
-from proctap_pipes.volume_meter_pipe import VolumeMeterPipe
 from proctap_pipes.base import AudioFormat
+from proctap_pipes.volume_meter_pipe import VolumeMeterPipe
 
 
 @pytest.fixture

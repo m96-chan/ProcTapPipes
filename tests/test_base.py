@@ -2,12 +2,10 @@
 
 import io
 import wave
-import struct
 
 import numpy as np
-import pytest
 
-from proctap_pipes.base import BasePipe, AudioFormat
+from proctap_pipes.base import AudioFormat, BasePipe
 
 
 class TestPipe(BasePipe):
