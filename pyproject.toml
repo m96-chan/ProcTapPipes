@@ -49,8 +49,12 @@ whisper-openai = [
     "openai>=1.0.0",
 ]
 
+mic-mix = [
+    "sounddevice>=0.4.6",
+]
+
 all = [
-    "proctap-pipes[whisper,whisper-openai]",
+    "proctap-pipes[whisper,whisper-openai,mic-mix]",
 ]
 
 [project.scripts]
@@ -59,6 +63,7 @@ proctap-llm = "proctap_pipes.cli.llm_cli:main"
 proctap-webhook = "proctap_pipes.cli.webhook_cli:main"
 proctap-volume-meter = "proctap_pipes.cli.volume_meter_cli:main"
 proctap-effects = "proctap_pipes.cli.audio_effects_cli:main"
+proctap-mic-mix = "proctap_pipes.cli.mic_mix_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/proctap/proctap-pipes"

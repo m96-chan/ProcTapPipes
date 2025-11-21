@@ -47,6 +47,12 @@ Real-time audio effects processing (noise reduction, normalization, EQ) to impro
 **CLI**: `proctap-effects`
 **Module**: `proctap_pipes.AudioEffectsPipe`
 
+### 6. MicMixPipe
+Mix microphone input with ProcTap audio streams for combined process + voice recording/streaming.
+
+**CLI**: `proctap-mic-mix`
+**Module**: `proctap_pipes.MicMixPipe`
+
 ## Installation
 
 ```bash
@@ -55,6 +61,9 @@ pip install proctap-pipes
 
 # With Whisper support (local models)
 pip install proctap-pipes[whisper]
+
+# With microphone mixing support
+pip install proctap-pipes[mic-mix]
 
 # Development installation
 pip install proctap-pipes[dev]
@@ -89,6 +98,19 @@ proctap -pid 1234 --stdout | proctap-effects --denoise --normalize --highpass 80
 # Use OpenAI API for Whisper
 export OPENAI_API_KEY="sk-..."
 proctap -pid 1234 --stdout | proctap-whisper --api --model whisper-1
+
+# Mix microphone input with process audio
+proctap --pid 1234 --stdout | proctap-mic-mix | proctap-whisper
+
+# Mix with custom gain and record to MP3
+proctap --pid 1234 --stdout | proctap-mic-mix --gain 0.8 | ffmpeg -f s16le -ar 48000 -ac 2 -i pipe:0 output.mp3
+
+# Use specific microphone device (list devices first)
+proctap-mic-mix --list-devices
+proctap --pid 1234 --stdout | proctap-mic-mix --device 0 | proctap-whisper
+
+# Record process + mic audio to MP3 with high quality
+proctap --pid 1234 --stdout | proctap-mic-mix --gain 0.9 | ffmpeg -f s16le -ar 48000 -ac 2 -i pipe:0 -c:a libmp3lame -b:a 192k output.mp3
 ```
 
 **Windows PowerShell users**: PowerShell has issues with binary piping. Use `.exe` directly from your virtual environment:
