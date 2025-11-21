@@ -36,24 +36,24 @@ class MicMixPipe(BasePipe):
         self,
         audio_format: AudioFormat | None = None,
         gain: float = 1.0,
-        mic_device: str | None = None,
-        mic_sample_rate: int = 16000,
-        mic_channels: int = 1,
+        mic_device: str | int | None = None,
+        mic_sample_rate: int = 48000,
+        mic_channels: int = 2,
         enable_mic: bool = True,
     ):
         """Initialize microphone mixer pipe.
 
         Args:
-            audio_format: Audio format for output (default: 16kHz mono 16-bit PCM)
+            audio_format: Audio format for output (default: 48kHz stereo 16-bit PCM)
             gain: Gain multiplier for microphone input (0.0-2.0, default: 1.0)
-            mic_device: Specific microphone device name (None = system default)
-            mic_sample_rate: Microphone sample rate (default: 16000)
-            mic_channels: Microphone channel count (default: 1 for mono)
+            mic_device: Microphone device name (str) or index (int), None = system default
+            mic_sample_rate: Microphone sample rate (default: 48000)
+            mic_channels: Microphone channel count (default: 2 for stereo)
             enable_mic: Enable microphone capture (default: True)
         """
         # Default to ProcTap standard format if not specified
         if audio_format is None:
-            audio_format = AudioFormat(sample_rate=16000, channels=1, sample_width=2)
+            audio_format = AudioFormat(sample_rate=48000, channels=2, sample_width=2)
 
         super().__init__(audio_format)
 
@@ -93,7 +93,14 @@ class MicMixPipe(BasePipe):
                 device_info = sd.query_devices(kind="input")
                 self.logger.info(f"Using default microphone: {device_info['name']}")
             else:
-                self.logger.info(f"Using microphone: {self.mic_device_name}")
+                # Support both device name (str) and device index (int)
+                if isinstance(self.mic_device_name, int):
+                    device_info = sd.query_devices(self.mic_device_name)
+                    self.logger.info(
+                        f"Using microphone [{self.mic_device_name}]: {device_info['name']}"
+                    )
+                else:
+                    self.logger.info(f"Using microphone: {self.mic_device_name}")
 
             # Create audio stream
             self.mic_device = sd.InputStream(

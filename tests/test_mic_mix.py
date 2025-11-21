@@ -11,8 +11,8 @@ from proctap_pipes.mic_mix_pipe import MicMixPipe
 
 @pytest.fixture
 def audio_format() -> AudioFormat:
-    """Create test audio format (ProcTap standard: 16-bit PCM, mono, 16kHz)."""
-    return AudioFormat(sample_rate=16000, channels=1, sample_width=2)
+    """Create test audio format (ProcTap standard: 16-bit PCM, stereo, 48kHz)."""
+    return AudioFormat(sample_rate=48000, channels=2, sample_width=2)
 
 
 @pytest.fixture
@@ -28,8 +28,8 @@ def test_mic_mix_initialization(audio_format: AudioFormat) -> None:
     with patch("proctap_pipes.mic_mix_pipe.MicMixPipe._init_mic_capture"):
         pipe = MicMixPipe(audio_format=audio_format, gain=0.8)
         assert pipe.gain == 0.8
-        assert pipe.audio_format.sample_rate == 16000
-        assert pipe.audio_format.channels == 1
+        assert pipe.audio_format.sample_rate == 48000
+        assert pipe.audio_format.channels == 2
 
 
 def test_mic_mix_default_gain(audio_format: AudioFormat) -> None:
@@ -105,28 +105,31 @@ def test_mix_audio_prevents_clipping() -> None:
 def test_resample_mic_audio() -> None:
     """Test resampling microphone audio to match ProcTap format."""
     with patch("proctap_pipes.mic_mix_pipe.MicMixPipe._init_mic_capture"):
-        # Mic at 48kHz, ProcTap at 16kHz
+        # Mic at 16kHz, ProcTap at 48kHz
         pipe = MicMixPipe(
-            audio_format=AudioFormat(sample_rate=16000, channels=1, sample_width=2),
-            mic_sample_rate=48000,
+            audio_format=AudioFormat(sample_rate=48000, channels=2, sample_width=2),
+            mic_sample_rate=16000,
+            mic_channels=2,
         )
 
-        # Create 480 samples at 48kHz (10ms)
-        mic_audio_48k = np.random.randint(-1000, 1000, size=(480, 1), dtype=np.int16)
+        # Create 160 samples at 16kHz (10ms)
+        mic_audio_16k = np.random.randint(-1000, 1000, size=(160, 2), dtype=np.int16)
 
-        # Resample to 16kHz should give ~160 samples
-        result = pipe._resample_mic_audio(mic_audio_48k)
+        # Resample to 48kHz should give ~480 samples
+        result = pipe._resample_mic_audio(mic_audio_16k)
 
-        expected_samples = int(480 * 16000 / 48000)
+        expected_samples = int(160 * 48000 / 16000)
         assert result.shape[0] == expected_samples
-        assert result.shape[1] == 1
+        assert result.shape[1] == 2
 
 
 def test_convert_stereo_to_mono() -> None:
-    """Test converting stereo mic input to mono."""
+    """Test converting stereo mic input to mono (for custom use case)."""
     with patch("proctap_pipes.mic_mix_pipe.MicMixPipe._init_mic_capture"):
+        # Test case where output is mono but mic is stereo
         pipe = MicMixPipe(
-            audio_format=AudioFormat(sample_rate=16000, channels=1, sample_width=2),
+            audio_format=AudioFormat(sample_rate=48000, channels=1, sample_width=2),
+            mic_sample_rate=48000,
             mic_channels=2,
         )
 
@@ -193,11 +196,16 @@ def test_flush_closes_mic_device() -> None:
 def test_mic_device_selection() -> None:
     """Test specifying a specific microphone device."""
     with patch("proctap_pipes.mic_mix_pipe.MicMixPipe._init_mic_capture") as mock_init:
+        # Test with device name (string)
         pipe = MicMixPipe(mic_device="USB Microphone")
-
-        # Should attempt to init with device name
         mock_init.assert_called_once()
         assert pipe.mic_device_name == "USB Microphone"
+
+        # Test with device index (int)
+        mock_init.reset_mock()
+        pipe_idx = MicMixPipe(mic_device=0)
+        mock_init.assert_called_once()
+        assert pipe_idx.mic_device_name == 0
 
 
 def test_passthrough_mode() -> None:

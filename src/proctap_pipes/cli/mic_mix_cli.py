@@ -78,15 +78,15 @@ def list_audio_devices() -> None:
     "--sample-rate",
     "-r",
     type=int,
-    default=16000,
-    help="Output sample rate in Hz (default: 16000)",
+    default=48000,
+    help="Output sample rate in Hz (default: 48000)",
 )
 @click.option(
     "--channels",
     "-c",
     type=int,
-    default=1,
-    help="Output number of channels (default: 1 for mono)",
+    default=2,
+    help="Output number of channels (default: 2 for stereo)",
 )
 @click.option(
     "--sample-width",
@@ -107,19 +107,19 @@ def list_audio_devices() -> None:
     "-d",
     type=str,
     default=None,
-    help="Microphone device name (default: system default)",
+    help="Microphone device name or index (e.g., '0' or 'USB Microphone')",
 )
 @click.option(
     "--mic-sample-rate",
     type=int,
-    default=16000,
-    help="Microphone sample rate in Hz (default: 16000)",
+    default=48000,
+    help="Microphone sample rate in Hz (default: 48000)",
 )
 @click.option(
     "--mic-channels",
     type=int,
-    default=1,
-    help="Microphone channels (default: 1 for mono)",
+    default=2,
+    help="Microphone channels (default: 2 for stereo)",
 )
 @click.option(
     "--no-mic",
@@ -177,6 +177,11 @@ def main(
         sys.exit(1)
 
     try:
+        # Parse device - convert to int if it's a numeric string
+        mic_device_parsed: str | int | None = device
+        if device is not None and device.isdigit():
+            mic_device_parsed = int(device)
+
         # Create audio format
         audio_format = AudioFormat(
             sample_rate=sample_rate,
@@ -188,7 +193,7 @@ def main(
         pipe = MicMixPipe(
             audio_format=audio_format,
             gain=gain,
-            mic_device=device,
+            mic_device=mic_device_parsed,
             mic_sample_rate=mic_sample_rate,
             mic_channels=mic_channels,
             enable_mic=not no_mic,
