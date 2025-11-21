@@ -19,7 +19,14 @@
       "Bash(black:*)",
       "Bash(ruff check:*)",
       "Bash(git add:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(where:*)",
+      "Bash(proctap-mic-mix:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(pip install:*)",
+      "Bash(C:/Users/y_har/.pyenv/pyenv-win/versions/3.12.8/Scripts/proctap-mic-mix.exe --list-devices)",
+      "Bash(timeout:*)",
+      "Bash(mypy:*)"
     ],
     "deny": [],
     "ask": []
